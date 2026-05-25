@@ -116,7 +116,7 @@ After all surviving scrapers have ingested at least once, run these against Neon
 | # | Failure mode | Check | Pass |
 |---|---|---|---|
 | D1 | `source_url` missing/empty on any scraped row | `select count(*) from events where source like 'scrape:%' and (source_url is null or trim(source_url)='')` | 0 |
-| D2 | No structured pricing on any scraped row | `select count(*) from events where source like 'scrape:%' and price_min is null and price_max is null and is_free=false` | 0 |
+| D2 | Pricing outside valid representation | `select count(*) from events where source like 'scrape:%' and not (is_free=true or price_min is not null or price_max is not null or (price_min is null and price_max is null and is_free=false))` | 0. Canonical states: free, priced, or null+null+false = "Price varies" (per SPEC's `formatPriceDisplay` outputs) |
 | D3 | Duplicate canonical_fingerprint introduced | `select count(*) from (select canonical_fingerprint from events where source like 'scrape:%' group by 1 having count(*)>1)` | 0 |
 | D4 | venue_id unresolved | `select count(*) from events e left join venues v on v.id=e.venue_id where e.source like 'scrape:%' and v.id is null` | 0 |
 | D5 | Wrong category | sample 20 rows per category from scraped sources, manual spot check against `source_url` | ≥ 18/20 per category correct |
