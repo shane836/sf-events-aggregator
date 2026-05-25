@@ -12,6 +12,9 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Per-worktree build artifacts (Conductor / git worktrees ship their
+    // own .next/dev/types). Not source code, never user-edited.
+    ".claude/worktrees/**",
   ]),
 ]);
 

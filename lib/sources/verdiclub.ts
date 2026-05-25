@@ -37,7 +37,7 @@ const VENUE_NAME = "Verdi Club";
 const VENUE_ADDRESS = "2424 Mariposa St";
 const NEIGHBORHOOD = "Mission";
 const TZ = "America/Los_Angeles";
-const VERIFICATION: "official" = "official";
+const VERIFICATION = "official" as const;
 const DEFAULT_CATEGORY: Category = "dancing";
 
 // Cap detail-page fetches per B3. We do not fetch detail pages today; reserve
