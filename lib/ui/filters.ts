@@ -22,6 +22,9 @@ export const PRESET_LABELS: Record<Exclude<DatePreset, "custom">, string> = {
   "next-week": "Next Week",
 };
 
+export type ViewMode = "month" | "week" | "day";
+export const VALID_VIEW_MODES: ReadonlyArray<ViewMode> = ["month", "week", "day"];
+
 export type FilterState = {
   categories: Category[];
   preset: DatePreset;
@@ -29,6 +32,14 @@ export type FilterState = {
   from: string | null;
   to: string | null;
   neighborhood: string | null;
+  /**
+   * Calendar view mode. Separate axis from `preset`: when `view` is set the
+   * calendar layout switches (month grid / week strip / day agenda) and the
+   * date range is derived from `view` + `date` instead of `preset`.
+   */
+  view: ViewMode;
+  /** YYYY-MM-DD anchor date for the view. Defaults to today in PT. */
+  date: string | null;
 };
 
 export function parseFilters(
@@ -39,8 +50,23 @@ export function parseFilters(
   const from = readSingle(searchParams.from);
   const to = readSingle(searchParams.to);
   const neighborhood = readSingle(searchParams.neighborhood);
+  const view = readView(searchParams.view);
+  const date = readDateKey(searchParams.date);
 
-  return { categories, preset, from, to, neighborhood };
+  return { categories, preset, from, to, neighborhood, view, date };
+}
+
+function readView(v: string | string[] | undefined): ViewMode {
+  const s = readSingle(v);
+  if (s === "month" || s === "week" || s === "day") return s;
+  return "month";
+}
+
+function readDateKey(v: string | string[] | undefined): string | null {
+  const s = readSingle(v);
+  if (s == null) return null;
+  // Strict YYYY-MM-DD validation — anything malformed falls back to today.
+  return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : null;
 }
 
 function readSingle(v: string | string[] | undefined): string | null {
@@ -185,6 +211,73 @@ export function buildSearchString(state: FilterState): string {
     if (state.to) sp.set("to", state.to);
   }
   if (state.neighborhood) sp.set("neighborhood", state.neighborhood);
+  if (state.view !== "month") sp.set("view", state.view);
+  if (state.date) sp.set("date", state.date);
   const s = sp.toString();
   return s ? `?${s}` : "";
+}
+
+/**
+ * Resolve a view + anchor date to (from, to) UTC ISO datetimes. The page uses
+ * this when `view` is set (i.e., the user opted into a real calendar-app view)
+ * instead of falling back to `presetToRange`.
+ *
+ * - month: first day of `date`'s month → last day, inclusive
+ * - week:  Sunday containing `date` → following Saturday, inclusive
+ * - day:   that single date
+ */
+export function viewToRange(
+  view: ViewMode,
+  dateKey: string,
+): { from: string; to: string } {
+  if (view === "day") {
+    return { from: toUtcDay(dateKey, false), to: toUtcDay(dateKey, true) };
+  }
+  if (view === "week") {
+    const dow = weekdayOfKey(dateKey); // 0=Sun..6=Sat
+    const sun = addDaysToKey(dateKey, -dow);
+    const sat = addDaysToKey(sun, 6);
+    return { from: toUtcDay(sun, false), to: toUtcDay(sat, true) };
+  }
+  // month
+  const [y, m] = dateKey.split("-").map(Number);
+  const firstKey = `${y}-${String(m).padStart(2, "0")}-01`;
+  const daysInMonth = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  const lastKey = `${y}-${String(m).padStart(2, "0")}-${String(daysInMonth).padStart(2, "0")}`;
+  return { from: toUtcDay(firstKey, false), to: toUtcDay(lastKey, true) };
+}
+
+/** Returns today's YYYY-MM-DD in Pacific time. */
+export function todayInPT(now: Date = new Date()): string {
+  return formatLocalDateKey(now, "America/Los_Angeles");
+}
+
+function weekdayOfKey(dateKey: string): number {
+  const [y, m, d] = dateKey.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d)).getUTCDay();
+}
+
+/**
+ * Advance a date by one unit of the active view. `direction` is +1 (next)
+ * or -1 (prev). Used by the calendar prev/next nav and keyboard arrows.
+ *
+ * - day:   ±1 day
+ * - week:  ±7 days
+ * - month: ±1 calendar month (clamps to last day if target month is shorter)
+ */
+export function advanceDate(
+  view: ViewMode,
+  dateKey: string,
+  direction: 1 | -1,
+): string {
+  if (view === "day") return addDaysToKey(dateKey, direction);
+  if (view === "week") return addDaysToKey(dateKey, 7 * direction);
+  // month
+  const [y, m, d] = dateKey.split("-").map(Number);
+  const targetMonthIndex = m - 1 + direction; // 0-indexed
+  const targetYear = y + Math.floor(targetMonthIndex / 12);
+  const targetMonth = ((targetMonthIndex % 12) + 12) % 12;
+  const daysInTarget = new Date(Date.UTC(targetYear, targetMonth + 1, 0)).getUTCDate();
+  const clampedDay = Math.min(d, daysInTarget);
+  return `${targetYear}-${String(targetMonth + 1).padStart(2, "0")}-${String(clampedDay).padStart(2, "0")}`;
 }

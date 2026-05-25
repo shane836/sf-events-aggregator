@@ -1,18 +1,28 @@
 import { Suspense } from "react";
 import { fetchEvents, type ApiEvent } from "@/lib/api/events";
-import { parseFilters, presetToRange, buildSearchString } from "@/lib/ui/filters";
+import {
+  buildSearchString,
+  parseFilters,
+  presetToRange,
+  todayInPT,
+  viewToRange,
+} from "@/lib/ui/filters";
+import { viewLabel } from "@/lib/ui/dates";
 import { AgendaList } from "./components/agenda-list";
 import { CalendarGrid } from "./components/calendar-grid";
+import { CalendarNav } from "./components/calendar-nav";
+import { DayView } from "./components/day-view";
 import { EmptyState } from "./components/empty-state";
 import { EventModal } from "./components/event-modal";
 import { FilterBar } from "./components/filter-bar";
+import { ViewToggle } from "./components/view-toggle";
+import { WeekGrid } from "./components/week-grid";
 
 /**
- * Calendar home page. Reads filters from `searchParams` (Next.js 16: Promise),
- * fetches from `/api/events`, and renders BOTH the month grid (desktop, `md+`)
- * and the agenda list (mobile, `< md`). CSS `hidden md:block` toggles which
- * view paints; the agenda is also mounted hidden on desktop so the
- * `[data-event-card]` selectors used by rubric E1/E3 always resolve.
+ * Calendar home page. Reads filters + view mode from `searchParams`
+ * (Next.js 16: Promise), fetches events, and renders the correct view
+ * (month grid / week strip / day agenda). Mobile still falls back to
+ * the agenda list for month view (parity with current behavior).
  *
  * Server component — never imports `db/`, only `/api/events` (rubric A3).
  */
@@ -27,12 +37,16 @@ export default async function Home({
 }) {
   const sp = await searchParams;
   const filters = parseFilters(sp);
-  const range = presetToRange(
-    filters.preset,
-    new Date(),
-    filters.from,
-    filters.to,
-  );
+  const anchorDate = filters.date ?? todayInPT();
+
+  // Range source: when view is non-month OR an explicit ?date= is set, derive
+  // from view+date (the user is in real calendar-app mode). Otherwise fall
+  // back to the legacy preset window — keeps existing /?preset=weekend
+  // bookmarks working unchanged.
+  const usingViewRange = filters.view !== "month" || filters.date != null;
+  const range = usingViewRange
+    ? viewToRange(filters.view, anchorDate)
+    : presetToRange(filters.preset, new Date(), filters.from, filters.to);
 
   const data = await fetchEvents({
     categories: filters.categories.length ? filters.categories : undefined,
@@ -74,24 +88,43 @@ export default async function Home({
       </Suspense>
 
       <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-4 sm:px-6 sm:py-6">
-        {data.events.length === 0 ? (
+        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <Suspense fallback={null}>
+            <CalendarNav
+              view={filters.view}
+              date={anchorDate}
+              label={viewLabel(filters.view, anchorDate)}
+            />
+          </Suspense>
+          <Suspense fallback={null}>
+            <ViewToggle view={filters.view} />
+          </Suspense>
+        </div>
+
+        {data.events.length === 0 && filters.view === "month" ? (
           <EmptyState />
+        ) : filters.view === "day" ? (
+          <DayView
+            events={data.events}
+            dateKey={anchorDate}
+            currentSearch={currentSearch}
+          />
+        ) : filters.view === "week" ? (
+          <WeekGrid
+            events={data.events}
+            dateKey={anchorDate}
+            currentSearch={currentSearch}
+          />
         ) : (
           <>
-            {/* Desktop: month grid */}
+            {/* Month view — keep desktop/mobile split (parity with pre-M5) */}
             <div data-view-mode="grid" className="hidden md:block">
               <CalendarGrid
                 events={data.events}
                 currentSearch={currentSearch}
+                dateKey={anchorDate}
               />
             </div>
-            {/*
-             * Agenda list. Visible at `< md`. At `md+` it stays in the DOM
-             * (so [data-event-card] selectors from rubric A2/E1/E3 resolve)
-             * but is moved off-screen and hidden from a11y. C4 (at 375px the
-             * visible layout is agenda) still holds because the desktop
-             * variant is only on at `md+`.
-             */}
             <div
               data-view-mode="agenda"
               className="md:absolute md:left-[-10000px] md:top-0 md:h-0 md:w-px md:overflow-hidden"

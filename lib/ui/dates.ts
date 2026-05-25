@@ -110,3 +110,33 @@ export function monthLabel(year: number, month: number): string {
     timeZone: "UTC",
   }).format(new Date(Date.UTC(year, month, 1)));
 }
+
+/**
+ * Human label for a date+view ("May 2026", "Week of May 25", "Friday, May 30").
+ * Used by the calendar-nav header so prev/next clicks always show what period
+ * is active. Computed from the date key directly (no timezone math — the date
+ * key IS the local date).
+ */
+export function viewLabel(view: "day" | "week" | "month", dateKey: string): string {
+  const [y, m, d] = dateKey.split("-").map(Number);
+  if (view === "month") {
+    return monthLabel(y, m - 1);
+  }
+  if (view === "day") {
+    return new Intl.DateTimeFormat("en-US", {
+      weekday: "long",
+      month: "long",
+      day: "numeric",
+      timeZone: "UTC",
+    }).format(new Date(Date.UTC(y, m - 1, d)));
+  }
+  // week
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  const dow = dt.getUTCDay();
+  const sun = new Date(Date.UTC(y, m - 1, d - dow));
+  return `Week of ${new Intl.DateTimeFormat("en-US", {
+    month: "long",
+    day: "numeric",
+    timeZone: "UTC",
+  }).format(sun)}`;
+}

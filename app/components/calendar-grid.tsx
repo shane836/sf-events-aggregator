@@ -22,41 +22,48 @@ const MAX_PER_CELL = 3;
 export function CalendarGrid({
   events,
   currentSearch,
+  dateKey,
   now = new Date(),
 }: {
   events: ApiEvent[];
   currentSearch: string;
+  /**
+   * YYYY-MM-DD anchor for the displayed month. When omitted the month is
+   * derived from the first event (legacy behavior). M5 passes this from the
+   * URL so navigation to empty months still works.
+   */
+  dateKey?: string;
   now?: Date;
 }) {
-  // Anchor the displayed month: first event if available, else current.
-  const anchor = events[0]
-    ? new Date(events[0].startTimeUtc)
-    : now;
   const tz = events[0]?.timezone ?? "America/Los_Angeles";
-
-  // Determine local year/month for the anchor
-  const fmt = new Intl.DateTimeFormat("en-US", {
-    timeZone: tz,
-    year: "numeric",
-    month: "numeric",
-  }).formatToParts(anchor);
-  const year = Number(fmt.find((p) => p.type === "year")?.value ?? 2026);
-  const monthOneIndexed = Number(
-    fmt.find((p) => p.type === "month")?.value ?? 1,
-  );
-  const month = monthOneIndexed - 1;
+  let year: number;
+  let month: number;
+  let monthOneIndexed: number;
+  if (dateKey) {
+    const [yy, mm] = dateKey.split("-").map(Number);
+    year = yy;
+    monthOneIndexed = mm;
+    month = mm - 1;
+  } else {
+    const anchor = events[0] ? new Date(events[0].startTimeUtc) : now;
+    const fmt = new Intl.DateTimeFormat("en-US", {
+      timeZone: tz,
+      year: "numeric",
+      month: "numeric",
+    }).formatToParts(anchor);
+    year = Number(fmt.find((p) => p.type === "year")?.value ?? 2026);
+    monthOneIndexed = Number(
+      fmt.find((p) => p.type === "month")?.value ?? 1,
+    );
+    month = monthOneIndexed - 1;
+  }
 
   const cells = monthGridDays(year, month);
   const byDate = groupEventsByLocalDate(events);
   const today = localDateKey(now.toISOString(), tz);
 
   return (
-    <div data-view="month-grid" className="flex flex-col gap-3">
-      <div className="flex items-baseline justify-between">
-        <h2 className="font-mono text-sm uppercase tracking-[0.2em] text-zinc-400">
-          {monthLabel(year, month)}
-        </h2>
-      </div>
+    <div data-view="month" data-view-month className="flex flex-col gap-3">
       <div
         role="grid"
         aria-label={monthLabel(year, month)}
