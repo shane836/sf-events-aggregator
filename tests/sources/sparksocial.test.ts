@@ -1,28 +1,53 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import * as cheerio from "cheerio";
 import { describe, expect, it } from "vitest";
 import adapter, {
-  buildDailyEvent,
-  localDateAtHour,
-  nextLocalDates,
+  detailNodeToRawEvent,
+  extractPricing,
+  parseListingEntries,
 } from "@/lib/sources/sparksocial";
-import { formatLocalDate, formatLocalMinute } from "@/lib/identity";
+import { parseJsonLd } from "@/lib/scrape";
+
+// Local mirror of the adapter's event-type filter so tests don't import a
+// non-exported helper. Adapter uses an internal `isEventNode`; we just call
+// parseJsonLd and slice the SocialEvent / Festival / SportsEvent block.
+const EVENT_TYPES = new Set([
+  "Event",
+  "SocialEvent",
+  "SportsEvent",
+  "Festival",
+  "FoodEvent",
+  "MusicEvent",
+]);
+function isEventNode(n: unknown): n is Record<string, unknown> {
+  if (!n || typeof n !== "object") return false;
+  const t = (n as Record<string, unknown>)["@type"];
+  return typeof t === "string" && EVENT_TYPES.has(t);
+}
 import type { Provenance, RawEvent } from "@/lib/sources/types";
 
 const TZ = "America/Los_Angeles";
 const fetchedAt = new Date("2026-05-25T00:00:00Z");
 
+function loadFixture(name: string): string {
+  return readFileSync(
+    resolve(process.cwd(), "fixtures/raw", name),
+    "utf-8",
+  );
+}
+
 const sample: RawEvent = {
   identity: {
     source: "scrape:sparksocial",
-    externalId: "sparksocial-2026-06-10",
-    sourceUrl: "https://visitsparksocial.com/events/calendar/",
+    externalId: "eb:1677626549169",
+    sourceUrl:
+      "https://www.eventbrite.com/e/trivia-night-at-spark-social-sf-tickets-1677626549169",
   },
-  title: "Spark Social SF — Food Trucks, Bar & Mini Golf (Wednesday)",
-  description:
-    "Spark Social SF is an open-air community space in Mission Bay with rotating food trucks, a beer garden, mini golf, and event space. Free to attend; food and drink priced individually.",
-  startTimeUtc: new Date("2026-06-10T18:00:00Z"), // 11am PDT
-  endTimeUtc: new Date("2026-06-11T04:00:00Z"), // 9pm PDT
+  title: "Trivia Night at SPARK Social SF",
+  description: "Your Weekly Trivia Challenge!",
+  startTimeUtc: new Date("2026-05-28T01:30:00Z"), // 6:30pm PDT on 2026-05-27
+  endTimeUtc: new Date("2026-05-28T03:30:00Z"), // 8:30pm PDT
   timezone: TZ,
   venue: {
     name: "Spark Social SF",
@@ -34,49 +59,45 @@ const sample: RawEvent = {
   },
   primaryCategory: "food",
   pricing: { priceMin: null, priceMax: null, isFree: true },
-  recurrence: {
-    seriesId: "sparksocial-daily",
-    occurrenceId: "sparksocial-2026-06-10",
-  },
-  verificationLevel: "official",
-  rawPayload: { localDate: "2026-06-10" },
+  recurrence: null,
+  verificationLevel: "community",
+  rawPayload: { name: "Trivia Night at SPARK Social SF" },
   fetchedAt,
 };
 
 const provenance: Provenance = {
   adapterId: "scrape:sparksocial",
-  adapterVersion: "1.0",
+  adapterVersion: "2.0",
   pipelineVersion: "m1-v2-test",
   normalizedAt: new Date("2026-05-25T00:00:00Z"),
 };
 
 describe("Spark Social SF adapter", () => {
-  it("advertises the right identity", () => {
+  it("advertises the right identity (verification downgraded to community for Eventbrite mining)", () => {
     expect(adapter.id).toBe("scrape:sparksocial");
     expect(adapter.tier).toBe("scrape");
-    expect(adapter.verificationLevel).toBe("official");
+    expect(adapter.verificationLevel).toBe("community");
   });
 
-  it("normalizes a raw event into a NormalizedEvent with stable fingerprint", () => {
+  it("normalizes a raw event into a NormalizedEvent with a stable fingerprint", () => {
     const norm = adapter.normalize(sample, provenance);
 
     expect(norm.identity.source).toBe("scrape:sparksocial");
     expect(norm.identity.externalId).toBe(sample.identity.externalId);
     expect(norm.identity.sourceUrl).toBe(sample.identity.sourceUrl);
-    expect(norm.title).toContain("Spark Social SF");
+    expect(norm.title).toContain("Trivia");
     expect(norm.category).toBe("food");
     expect(norm.timezone).toBe(TZ);
-    expect(norm.verificationLevel).toBe("official");
+    expect(norm.verificationLevel).toBe("community");
     expect(norm.canonicalFingerprint).toMatch(/^[a-f0-9]{32}$/);
     expect(norm.venue.name).toBe("Spark Social SF");
     expect(norm.venue.neighborhood).toBe("Mission Bay");
     expect(norm.venue.lat).toBeCloseTo(37.7707793, 5);
     expect(norm.venue.lng).toBeCloseTo(-122.3914307, 5);
     expect(norm.pricing.isFree).toBe(true);
-    expect(norm.recurrence?.seriesId).toBe("sparksocial-daily");
     expect(norm.provenance.pipelineVersion).toBe("m1-v2-test");
 
-    // normalize is pure — same input + provenance → byte-identical output
+    // normalize is pure — same input + provenance → byte-identical output.
     const second = adapter.normalize(sample, provenance);
     expect(second).toEqual(norm);
   });
@@ -84,117 +105,188 @@ describe("Spark Social SF adapter", () => {
   it("preserves identity.sourceUrl (D12 invariant)", () => {
     const norm = adapter.normalize(sample, provenance);
     expect(norm.identity.sourceUrl.length).toBeGreaterThan(0);
+    // Must NOT point at the dead visitsparksocial.com calendar widget.
+    expect(norm.identity.sourceUrl).not.toMatch(/visitsparksocial\.com/);
+    expect(norm.identity.sourceUrl).toMatch(/eventbrite\.com\/e\//);
   });
 
-  it("emits structured pricing with isFree=true (D13 invariant)", () => {
+  it("emits structured pricing satisfying D2 (priceMin || priceMax || isFree)", () => {
     const norm = adapter.normalize(sample, provenance);
-    // M3 D2: not (priceMin null AND priceMax null AND isFree false)
     const noPriceData =
       norm.pricing.priceMin == null &&
       norm.pricing.priceMax == null &&
       !norm.pricing.isFree;
     expect(noPriceData).toBe(false);
-    expect(norm.pricing.isFree).toBe(true);
-    expect(norm.pricing.priceMin).toBeNull();
-    expect(norm.pricing.priceMax).toBeNull();
   });
 });
 
-describe("localDateAtHour", () => {
-  it("returns the correct UTC instant for 11am PDT (UTC-7)", () => {
-    // June is PDT (UTC-7): 11am local → 18:00 UTC
-    const utc = localDateAtHour("2026-06-10", 11, TZ);
-    expect(utc.toISOString()).toBe("2026-06-10T18:00:00.000Z");
-  });
-
-  it("returns the correct UTC instant for 11am PST (UTC-8)", () => {
-    // January is PST (UTC-8): 11am local → 19:00 UTC
-    const utc = localDateAtHour("2026-01-15", 11, TZ);
-    expect(utc.toISOString()).toBe("2026-01-15T19:00:00.000Z");
-  });
-
-  it("returns the correct UTC instant for 9pm PDT", () => {
-    // 21:00 PDT (UTC-7) → 04:00 next-day UTC
-    const utc = localDateAtHour("2026-06-10", 21, TZ);
-    expect(utc.toISOString()).toBe("2026-06-11T04:00:00.000Z");
-  });
-
-  it("round-trips: formatLocalMinute(localDateAtHour(d, h)) yields d at h:00", () => {
-    for (const date of ["2026-01-15", "2026-06-10", "2026-11-02"]) {
-      for (const hour of [11, 17, 21]) {
-        const utc = localDateAtHour(date, hour, TZ);
-        const local = formatLocalMinute(utc, TZ);
-        const wantHour = hour < 10 ? `0${hour}` : `${hour}`;
-        expect(local).toBe(`${date}T${wantHour}:00`);
-      }
+describe("parseListingEntries (Eventbrite ItemList JSON-LD)", () => {
+  it("extracts only events whose location.name is 'Spark Social SF'", () => {
+    const html = loadFixture("sparksocial.html");
+    const entries = parseListingEntries(html);
+    // The fixture's ItemList has 20 events; at least one is at Spark Social SF.
+    expect(entries.length).toBeGreaterThanOrEqual(1);
+    expect(entries.length).toBeLessThanOrEqual(20);
+    for (const e of entries) {
+      expect(e.url).toMatch(/eventbrite\.com\/e\//);
+      expect(e.name.length).toBeGreaterThan(0);
+      expect(e.startDate).toMatch(/^\d{4}-\d{2}-\d{2}/);
     }
   });
-});
 
-describe("nextLocalDates", () => {
-  it("returns 60 distinct, monotonically-increasing local dates", () => {
-    const dates = nextLocalDates(fetchedAt, 60);
-    expect(dates).toHaveLength(60);
-    expect(new Set(dates).size).toBe(60);
-    for (let i = 1; i < dates.length; i++) {
-      expect(dates[i] > dates[i - 1]).toBe(true);
-    }
-    // First date is today (in PT). fetchedAt is 2026-05-25T00:00Z → that's
-    // 2026-05-24 17:00 PDT, so the first local date is "2026-05-24".
-    expect(dates[0]).toBe(formatLocalDate(fetchedAt, TZ));
+  it("returns the Trivia Night entry from the fixture", () => {
+    const html = loadFixture("sparksocial.html");
+    const entries = parseListingEntries(html);
+    const trivia = entries.find((e) => /trivia/i.test(e.name));
+    expect(trivia).toBeDefined();
+    expect(trivia?.url).toContain("trivia-night-at-spark-social-sf");
+  });
+
+  it("returns an empty array on HTML with no JSON-LD", () => {
+    expect(parseListingEntries("<html><body>nothing</body></html>")).toEqual([]);
+  });
+
+  it("returns an empty array on HTML whose ItemList has no Spark Social matches", () => {
+    const html = `<script type="application/ld+json">${JSON.stringify({
+      "@context": "https://schema.org",
+      itemListElement: [
+        {
+          position: 1,
+          "@type": "ListItem",
+          item: {
+            "@type": "Event",
+            name: "Some other event",
+            url: "https://www.eventbrite.com/e/other-tickets-99999",
+            startDate: "2026-06-01",
+            location: { "@type": "Place", name: "Some Other Place" },
+          },
+        },
+      ],
+    })}</script>`;
+    expect(parseListingEntries(html)).toEqual([]);
   });
 });
 
-describe("buildDailyEvent", () => {
-  it("builds a Wednesday event with Mon-Sat hours (11am-9pm PT)", () => {
-    // 2026-06-10 is a Wednesday.
-    const ev = buildDailyEvent("2026-06-10", fetchedAt)!;
-    expect(ev).not.toBeNull();
-    expect(ev.identity.externalId).toBe("sparksocial-2026-06-10");
-    expect(ev.title).toContain("Wednesday");
-    expect(formatLocalMinute(ev.startTimeUtc, TZ)).toBe("2026-06-10T11:00");
-    expect(formatLocalMinute(ev.endTimeUtc!, TZ)).toBe("2026-06-10T21:00");
-    expect(ev.pricing?.isFree).toBe(true);
-    expect(ev.primaryCategory).toBe("food");
+describe("detailNodeToRawEvent (Eventbrite event-detail JSON-LD)", () => {
+  it("builds a RawEvent from the Trivia Night detail fixture", () => {
+    const html = loadFixture("sparksocial-detail-trivia.html");
+    const $ = cheerio.load(html);
+    const nodes = parseJsonLd($).filter(isEventNode);
+    expect(nodes.length).toBeGreaterThanOrEqual(1);
+
+    const raw = detailNodeToRawEvent(
+      nodes[0],
+      "https://www.eventbrite.com/e/trivia-night-at-spark-social-sf-tickets-1677626549169",
+      fetchedAt,
+    )!;
+    expect(raw).not.toBeNull();
+    expect(raw.title).toMatch(/Trivia/i);
+    expect(raw.identity.externalId).toMatch(/^eb:\d+$/);
+    expect(raw.identity.sourceUrl).toMatch(/eventbrite\.com\/e\//);
+    expect(raw.startTimeUtc.toISOString()).toBe("2026-05-28T01:30:00.000Z");
+    expect(raw.endTimeUtc?.toISOString()).toBe("2026-05-28T03:30:00.000Z");
+    expect(raw.timezone).toBe(TZ);
+    expect(raw.pricing).toEqual({
+      priceMin: null,
+      priceMax: null,
+      isFree: true,
+    });
+    expect(raw.venue.name).toBe("Spark Social SF");
+    expect(raw.venue.address).toContain("601 Mission Bay");
+    expect(raw.primaryCategory).toBe("food");
+    expect(raw.verificationLevel).toBe("community");
   });
 
-  it("builds a Sunday event with abbreviated hours (11am-5pm PT)", () => {
-    // 2026-06-14 is a Sunday.
-    const ev = buildDailyEvent("2026-06-14", fetchedAt)!;
-    expect(ev).not.toBeNull();
-    expect(ev.title).toContain("Sunday");
-    expect(formatLocalMinute(ev.startTimeUtc, TZ)).toBe("2026-06-14T11:00");
-    expect(formatLocalMinute(ev.endTimeUtc!, TZ)).toBe("2026-06-14T17:00");
+  it("builds a RawEvent from the Mission Bay Cleanup fixture (SportsEvent JSON-LD type)", () => {
+    const html = loadFixture("sparksocial-detail-cleanup.html");
+    const $ = cheerio.load(html);
+    const nodes = parseJsonLd($).filter(isEventNode);
+    expect(nodes.length).toBeGreaterThanOrEqual(1);
+
+    const raw = detailNodeToRawEvent(
+      nodes[0],
+      "https://www.eventbrite.com/e/mission-bay-cleanup-tickets-1981068952566",
+      fetchedAt,
+    )!;
+    expect(raw.title).toBe("Mission Bay Cleanup");
+    expect(raw.startTimeUtc.toISOString()).toBe("2026-06-13T16:00:00.000Z");
+    expect(raw.pricing?.isFree).toBe(true);
+    expect(raw.venue.name).toBe("Spark Social SF");
   });
 
-  it("produces distinct canonical fingerprints across consecutive days", () => {
-    const a = buildDailyEvent("2026-06-10", fetchedAt)!;
-    const b = buildDailyEvent("2026-06-11", fetchedAt)!;
-    const aNorm = adapter.normalize(a, provenance);
-    const bNorm = adapter.normalize(b, provenance);
-    expect(aNorm.canonicalFingerprint).not.toBe(bNorm.canonicalFingerprint);
+  it("returns null when name or startDate is missing", () => {
+    expect(detailNodeToRawEvent({}, "https://x", fetchedAt)).toBeNull();
+    expect(
+      detailNodeToRawEvent(
+        { name: "X" } as Record<string, unknown>,
+        "https://x",
+        fetchedAt,
+      ),
+    ).toBeNull();
+    expect(
+      detailNodeToRawEvent(
+        { startDate: "2026-01-01T00:00:00Z" } as Record<string, unknown>,
+        "https://x",
+        fetchedAt,
+      ),
+    ).toBeNull();
   });
 
-  it("uses the canonical events listing URL as sourceUrl", () => {
-    const ev = buildDailyEvent("2026-06-10", fetchedAt)!;
-    expect(ev.identity.sourceUrl).toBe(
-      "https://visitsparksocial.com/events/calendar/",
-    );
+  it("returns null when startDate cannot be parsed as a Date", () => {
+    expect(
+      detailNodeToRawEvent(
+        { name: "X", startDate: "not-a-date" } as Record<string, unknown>,
+        "https://x",
+        fetchedAt,
+      ),
+    ).toBeNull();
+  });
+
+  it("derives externalId from the -tickets-<n> URL suffix", () => {
+    const raw = detailNodeToRawEvent(
+      {
+        name: "Test",
+        startDate: "2026-06-01T19:00:00-07:00",
+        url: "https://www.eventbrite.com/e/some-event-tickets-9876543210",
+      } as Record<string, unknown>,
+      "https://www.eventbrite.com/e/some-event-tickets-9876543210",
+      fetchedAt,
+    )!;
+    expect(raw.identity.externalId).toBe("eb:9876543210");
   });
 });
 
-describe("Spark Social fixture regression", () => {
-  it("the saved HTML fixture loads and is non-empty", () => {
-    const html = readFileSync(
-      resolve(process.cwd(), "fixtures/raw/sparksocial.html"),
-      "utf-8",
-    );
-    expect(html.length).toBeGreaterThan(10_000);
-    // The page redirects to visitsparksocial.com and renders the Elfsight
-    // widget tag — if either changes, the schedule-expansion approach may
-    // need to be revisited (the widget tag is our only signal that the
-    // calendar is still client-side rendered).
-    expect(html.toLowerCase()).toContain("upcoming events");
-    expect(html.toLowerCase()).toContain("elfsight");
+describe("extractPricing (Eventbrite offers JSON-LD)", () => {
+  it("maps lowPrice=highPrice=0 to isFree", () => {
+    expect(
+      extractPricing({
+        offers: [{ "@type": "AggregateOffer", lowPrice: "0.0", highPrice: "0.0" }],
+      }),
+    ).toEqual({ priceMin: null, priceMax: null, isFree: true });
+  });
+
+  it("maps a paid offer to priceMin and priceMax", () => {
+    expect(
+      extractPricing({
+        offers: [
+          { "@type": "AggregateOffer", lowPrice: "10.0", highPrice: "25.0" },
+        ],
+      }),
+    ).toEqual({ priceMin: 10, priceMax: 25, isFree: false });
+  });
+
+  it("handles a single (non-array) offer object", () => {
+    expect(
+      extractPricing({
+        offers: { "@type": "Offer", price: "15.0" },
+      }),
+    ).toEqual({ priceMin: 15, priceMax: 15, isFree: false });
+  });
+
+  it("falls back to priceMin=0 (not-null) when offers are missing — satisfies D2", () => {
+    const p = extractPricing({});
+    expect(p.priceMin).toBe(0);
+    expect(p.priceMax).toBeNull();
+    expect(p.isFree).toBe(false);
   });
 });

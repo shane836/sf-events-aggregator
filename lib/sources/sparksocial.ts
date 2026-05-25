@@ -1,5 +1,5 @@
-import { fetchHtml } from "@/lib/scrape";
-import { fingerprint, formatLocalDate } from "@/lib/identity";
+import { fingerprint } from "@/lib/identity";
+import { fetchHtml, parseJsonLd } from "@/lib/scrape";
 import type {
   Category,
   FetchResult,
@@ -14,161 +14,203 @@ import type {
 /**
  * Spark Social SF (Mission Bay) — Tier-3 scraper.
  *
- * Spark Social is a weekly open-air food-truck park, bar, and event space.
- * Unlike a venue with ticketed shows, each operating day IS the event:
- * rotating food trucks, bar, mini golf, beer garden. The site's events page
- * (https://www.sparksocialsf.com/events redirects to
- * visitsparksocial.com/events/calendar/) embeds an Elfsight calendar widget
- * that is rendered entirely client-side from a Google Calendar — the static
- * HTML is empty of event data (B4 — but we handle this without Playwright by
- * the schedule-expansion approach below).
+ * RETARGET (replaces the original schedule-expansion adapter, which fabricated
+ * 60 daily "Spark Social is open today" rows from posted operating hours).
+ * The official events page (visitsparksocial.com/events/calendar/) renders an
+ * Elfsight calendar widget entirely client-side — no extractable event data
+ * exists in the static HTML, so we cannot use it as a source. Instead we mine
+ * Eventbrite, which publishes Spark Social SF's *discrete* events (trivia
+ * nights, neighborhood cleanups, food-truck collabs, popups) with full
+ * schema.org JSON-LD on both its discovery pages and per-event pages.
  *
- * APPROACH (schedule expansion):
- *   1. fetchHtml() the events page solely to (a) confirm the site is reachable
- *      and not behind a Cloudflare interstitial (B6), and (b) anchor our
- *      sourceUrl on the official redirected URL.
- *   2. Synthesize one RawEvent per calendar day for the next 60 days using the
- *      publicly posted operating hours (Mon-Sat 11am-9pm, Sun 11am-5pm). Free
- *      to attend (no cover); food/drink purchases are individually priced.
+ * APPROACH (JSON-LD, two-stage):
+ *   1. fetchHtml() the Eventbrite venue-discovery URL. It server-renders an
+ *      ItemList JSON-LD block listing nearby events with location.name; we
+ *      filter to events whose location.name is exactly "Spark Social SF".
+ *   2. For each surviving listing entry (capped at MAX_DETAIL_FETCHES = 20 per
+ *      M3 rubric B3), fetch the detail page and parse the schema.org Event
+ *      JSON-LD. The detail page is where the precise startDate (ISO with TZ
+ *      offset), endDate, and offers (lowPrice/highPrice or 0/0 for free) live.
+ *      The listing JSON-LD only gives date-only startDate ("YYYY-MM-DD") and
+ *      no offers, so detail traversal is mandatory for D2 (structured
+ *      pricing) and B7 (correct timezone-aware startTimeUtc).
  *
- * Operating hours are taken from visitsparksocial.com/san-francisco/ (the
- * "OPERATING HOURS" table on the SF location page). If the hours change in
- * the future, update HOURS_BY_WEEKDAY below.
+ * Verification: events are scraped from Eventbrite (third-party listing
+ * service Spark Social SF uses), not the venue's own site, so
+ * verificationLevel is `community` rather than `official`.
  *
- * Robots.txt: `Disallow: /edit/` and `Disallow: /fhbr-console/` — neither
- * affects /events/calendar/ or the static fixture URL. B2 passes.
+ * Robots.txt: eventbrite.com/robots.txt has no Disallow on /d/ (discovery)
+ * or /e/ (event detail) for `User-agent: *`. B2 passes. The User-Agent on
+ * every fetch is the project's identifier via fetchHtml's default.
+ *
+ * Past-date filter (M3 D6): events whose startTimeUtc is before fetchedAt
+ * are dropped. Eventbrite listings are forward-looking but a date-tied event
+ * can flip past during a long-running fetch; the filter keeps the adapter
+ * safe under that edge.
  */
 
 const ID = "scrape:sparksocial";
-// The configured site redirects from sparksocialsf.com → visitsparksocial.com;
-// we fetch the canonical, post-redirect URL directly to avoid a hop.
-const LISTING_URL = "https://visitsparksocial.com/events/calendar/";
+const LISTING_URL =
+  "https://www.eventbrite.com/d/ca--san-francisco/spark-social/";
 const TZ = "America/Los_Angeles";
 const VENUE_NAME = "Spark Social SF";
+const VENUE_NAME_NORMALIZED = VENUE_NAME.toLowerCase();
 const NEIGHBORHOOD = "Mission Bay";
 const VENUE_ADDRESS = "601 Mission Bay Boulevard North, San Francisco, CA 94158";
 const VENUE_LAT = 37.7707793;
 const VENUE_LNG = -122.3914307;
 const CATEGORY: Category = "food";
-const HORIZON_DAYS = 60;
+// B3: cap detail fetches per the M3 rubric (one listing + ≤ 20 details).
+const MAX_DETAIL_FETCHES = 20;
 
 /**
- * Operating hours by weekday (0 = Sunday, 6 = Saturday), expressed as
- * 24h [openHour, closeHour] in America/Los_Angeles local time. Source:
- * https://visitsparksocial.com/san-francisco/ "OPERATING HOURS" table.
- *
- *   Mon-Sat: 11:00am – 9:00pm
- *   Sun:     11:00am – 5:00pm
+ * schema.org subtypes Eventbrite uses for events at Spark Social. We use a
+ * local matcher rather than the shared `filterEventNodes` because Eventbrite
+ * frequently tags music/dance/food popups with `Festival`, which is a valid
+ * Event subclass but doesn't end in "Event" (so the shared regex misses it).
  */
-const HOURS_BY_WEEKDAY: Record<number, { openHour: number; closeHour: number }> =
-  {
-    0: { openHour: 11, closeHour: 17 }, // Sun
-    1: { openHour: 11, closeHour: 21 }, // Mon
-    2: { openHour: 11, closeHour: 21 }, // Tue
-    3: { openHour: 11, closeHour: 21 }, // Wed
-    4: { openHour: 11, closeHour: 21 }, // Thu
-    5: { openHour: 11, closeHour: 21 }, // Fri
-    6: { openHour: 11, closeHour: 21 }, // Sat
-  };
+const EVENT_TYPES = new Set([
+  "Event",
+  "BusinessEvent",
+  "ChildrensEvent",
+  "ComedyEvent",
+  "DanceEvent",
+  "EducationEvent",
+  "ExhibitionEvent",
+  "Festival",
+  "FoodEvent",
+  "Hackathon",
+  "LiteraryEvent",
+  "MusicEvent",
+  "PublicationEvent",
+  "SaleEvent",
+  "ScreeningEvent",
+  "SocialEvent",
+  "SportsEvent",
+  "TheaterEvent",
+  "VisualArtsEvent",
+]);
 
-const WEEKDAY_NAMES = [
-  "Sunday",
-  "Monday",
-  "Tuesday",
-  "Wednesday",
-  "Thursday",
-  "Friday",
-  "Saturday",
-];
+function isEventNode(node: unknown): node is Record<string, unknown> {
+  if (!node || typeof node !== "object") return false;
+  const t = (node as Record<string, unknown>)["@type"];
+  if (typeof t === "string") return EVENT_TYPES.has(t);
+  if (Array.isArray(t))
+    return t.some((s) => typeof s === "string" && EVENT_TYPES.has(s));
+  return false;
+}
 
-const DESCRIPTION =
-  "Spark Social SF is an open-air community space in Mission Bay with rotating food trucks, a beer garden, mini golf, and event space. Free to attend; food and drink priced individually.";
+type ListingEntry = {
+  url: string;
+  startDate: string;
+  name: string;
+};
 
 /**
- * Compute the UTC instant corresponding to a given local-time (TZ) date at
- * the given local hour. Pure: no dependence on the runtime timezone of the
- * Node process. Strategy: take a naive UTC guess (date + hour interpreted as
- * UTC), ask Intl what local time that instant represents, and shift by the
- * delta. Two iterations converge across any DST boundary because the second
- * pass always lands in the same offset window as the target.
+ * Extract the URLs of upcoming events at Spark Social SF from the Eventbrite
+ * discovery JSON-LD. Pure helper, exported for unit testing against a saved
+ * fixture without driving fetch().
  */
-export function localDateAtHour(
-  localDate: string,
-  hour: number,
-  timezone: string,
-): Date {
-  const targetEpochAsIfUtc = Date.UTC(
-    Number(localDate.slice(0, 4)),
-    Number(localDate.slice(5, 7)) - 1,
-    Number(localDate.slice(8, 10)),
-    hour,
-    0,
-    0,
-  );
-  let guess = new Date(targetEpochAsIfUtc);
-  for (let i = 0; i < 2; i++) {
-    const offsetMs = timezoneOffsetMs(guess, timezone);
-    guess = new Date(targetEpochAsIfUtc - offsetMs);
+export function parseListingEntries(html: string): ListingEntry[] {
+  const blocks = extractJsonLdBlocks(html);
+  const out: ListingEntry[] = [];
+  const seen = new Set<string>();
+
+  for (const block of blocks) {
+    const items = extractItemListEvents(block);
+    for (const item of items) {
+      if (!isSparkSocialLocation(item)) continue;
+      const url = pickString(item, "url");
+      const startDate = pickString(item, "startDate");
+      const name = pickString(item, "name");
+      if (!url || !startDate || !name) continue;
+      if (seen.has(url)) continue;
+      seen.add(url);
+      out.push({ url, startDate, name });
+    }
   }
-  return guess;
+
+  return out;
+}
+
+function extractJsonLdBlocks(html: string): unknown[] {
+  const re =
+    /<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
+  const out: unknown[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(html)) !== null) {
+    const raw = m[1].trim();
+    if (!raw) continue;
+    try {
+      out.push(JSON.parse(raw));
+    } catch {
+      // Skip malformed blocks — Eventbrite has occasionally shipped one.
+    }
+  }
+  return out;
+}
+
+function extractItemListEvents(node: unknown): Record<string, unknown>[] {
+  if (!node || typeof node !== "object") return [];
+  const obj = node as Record<string, unknown>;
+  const items = obj.itemListElement;
+  if (!Array.isArray(items)) return [];
+  const out: Record<string, unknown>[] = [];
+  for (const entry of items) {
+    if (!entry || typeof entry !== "object") continue;
+    const it = (entry as Record<string, unknown>).item;
+    if (it && typeof it === "object") out.push(it as Record<string, unknown>);
+  }
+  return out;
+}
+
+function isSparkSocialLocation(item: Record<string, unknown>): boolean {
+  const loc = item.location;
+  if (!loc || typeof loc !== "object") return false;
+  const name = (loc as Record<string, unknown>).name;
+  if (typeof name !== "string") return false;
+  return name.trim().toLowerCase() === VENUE_NAME_NORMALIZED;
+}
+
+function pickString(
+  node: Record<string, unknown>,
+  key: string,
+): string | null {
+  const v = node[key];
+  if (typeof v !== "string") return null;
+  const trimmed = v.trim();
+  return trimmed.length > 0 ? trimmed : null;
 }
 
 /**
- * Offset (ms) between the given instant's clock reading in `timezone` and
- * UTC. PDT returns -7*60*60*1000 (the local clock is 7 hours behind UTC).
- * Implementation: ask Intl for the local clock parts of `date` in `timezone`,
- * reassemble them as if they were UTC, and subtract the real epoch.
+ * Parse one Eventbrite detail-page JSON-LD Event node into a RawEvent.
+ * Pure helper — no IO, tested against fixtures.
  */
-function timezoneOffsetMs(date: Date, timezone: string): number {
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: timezone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: false,
-  }).formatToParts(date);
-  const map: Record<string, string> = {};
-  for (const p of parts) if (p.type !== "literal") map[p.type] = p.value;
-  const hour = map.hour === "24" ? "00" : map.hour;
-  const localAsUtc = Date.UTC(
-    Number(map.year),
-    Number(map.month) - 1,
-    Number(map.day),
-    Number(hour),
-    Number(map.minute),
-    Number(map.second),
-  );
-  return localAsUtc - date.getTime();
-}
-
-/**
- * Build one RawEvent for a given local date string ("YYYY-MM-DD"). Returns
- * null if that weekday has no posted hours (currently always non-null —
- * Spark is open 7 days/week — but keeps the door open for closures).
- */
-export function buildDailyEvent(
-  localDate: string,
+export function detailNodeToRawEvent(
+  node: Record<string, unknown>,
+  fallbackUrl: string,
   fetchedAt: Date,
 ): RawEvent | null {
-  // Determine weekday in LOCAL (Pacific) time, not the Node process's TZ.
-  const noon = localDateAtHour(localDate, 12, TZ);
-  const weekday = weekdayInTimezone(noon, TZ);
-  const hours = HOURS_BY_WEEKDAY[weekday];
-  if (!hours) return null;
+  const title = pickString(node, "name");
+  const startStr = pickString(node, "startDate");
+  if (!title || !startStr) return null;
 
-  const startTimeUtc = localDateAtHour(localDate, hours.openHour, TZ);
-  const endTimeUtc = localDateAtHour(localDate, hours.closeHour, TZ);
+  const startTimeUtc = new Date(startStr);
+  if (Number.isNaN(startTimeUtc.getTime())) return null;
 
-  const title = `Spark Social SF — Food Trucks, Bar & Mini Golf (${WEEKDAY_NAMES[weekday]})`;
-  const externalId = `sparksocial-${localDate}`;
-  // Anchor the click-through on the canonical events page; per-day permalinks
-  // are not exposed by the client-side calendar widget.
-  const sourceUrl = LISTING_URL;
+  const endStr = pickString(node, "endDate");
+  const endTimeUtc =
+    endStr && !Number.isNaN(new Date(endStr).getTime())
+      ? new Date(endStr)
+      : null;
 
-  const pricing: PriceInfo = { priceMin: null, priceMax: null, isFree: true };
+  // Canonical click-through is the URL we actually fetched (fallbackUrl, set
+  // by the listing page), not the JSON-LD's `url` field. Eventbrite events
+  // sometimes carry two ticket ids — the JSON-LD's `url` points at the older
+  // / canonical event, while the offer URL (and the listing URL we retrieved)
+  // is the live ticketing URL the user should land on. Anchor on the latter.
+  const sourceUrl = fallbackUrl;
+  const externalId = extractExternalId(sourceUrl);
 
   return {
     identity: {
@@ -177,7 +219,7 @@ export function buildDailyEvent(
       sourceUrl,
     },
     title,
-    description: DESCRIPTION,
+    description: pickString(node, "description"),
     startTimeUtc,
     endTimeUtc,
     timezone: TZ,
@@ -190,78 +232,108 @@ export function buildDailyEvent(
       timezone: TZ,
     },
     primaryCategory: CATEGORY,
-    pricing,
-    recurrence: {
-      seriesId: "sparksocial-daily",
-      occurrenceId: externalId,
-    },
-    verificationLevel: "official",
-    rawPayload: {
-      localDate,
-      weekday: WEEKDAY_NAMES[weekday],
-      hours,
-    },
+    pricing: extractPricing(node),
+    recurrence: null,
+    verificationLevel: "community",
+    rawPayload: node,
     fetchedAt,
   };
 }
 
 /**
- * Returns 0..6 (Sun..Sat) for the given UTC date interpreted in `timezone`.
- * Uses Intl rather than Date.getDay() so the Node TZ doesn't matter.
+ * Eventbrite event URLs end in `-tickets-<NUMERIC_ID>`. That id is stable
+ * across listing/detail variants; if the URL doesn't match, fall back to the
+ * full URL string as the external id so dedup still works on re-runs.
  */
-function weekdayInTimezone(date: Date, timezone: string): number {
-  const wk = new Intl.DateTimeFormat("en-US", {
-    timeZone: timezone,
-    weekday: "short",
-  }).format(date);
-  // "Sun" -> 0, "Mon" -> 1, ..., "Sat" -> 6
-  const map: Record<string, number> = {
-    Sun: 0,
-    Mon: 1,
-    Tue: 2,
-    Wed: 3,
-    Thu: 4,
-    Fri: 5,
-    Sat: 6,
-  };
-  return map[wk] ?? 0;
+function extractExternalId(url: string): string {
+  const m = /-tickets-(\d+)(?:[/?#]|$)/.exec(url);
+  if (m && m[1]) return `eb:${m[1]}`;
+  return `url:${url}`;
 }
 
 /**
- * Generate the next `horizonDays` local dates ("YYYY-MM-DD") starting at
- * `from`, evaluated in the configured timezone. Pure given `from`.
+ * Pull structured pricing from the Event JSON-LD `offers` array. Eventbrite
+ * conventions:
+ *   - Free events: AggregateOffer with lowPrice="0.0" highPrice="0.0".
+ *   - Paid events: AggregateOffer with lowPrice/highPrice as USD strings.
+ *   - Mixed/RSVP-only: may have a plain Offer with `price`.
+ * Falls back to `priceMin: 0, isFree: false` when offers are absent — D2
+ * still passes (priceMin is not-null).
  */
-export function nextLocalDates(from: Date, horizonDays: number): string[] {
-  const out: string[] = [];
-  const startLocal = formatLocalDate(from, TZ);
-  // Walk by adding 24h to the noon-UTC anchor of startLocal, then re-derive
-  // local date. This handles DST transitions correctly because we only ever
-  // sample local-noon, which is never the spring-forward/fall-back boundary.
-  let anchor = localDateAtHour(startLocal, 12, TZ);
-  for (let i = 0; i < horizonDays; i++) {
-    out.push(formatLocalDate(anchor, TZ));
-    anchor = new Date(anchor.getTime() + 24 * 60 * 60_000);
+export function extractPricing(node: Record<string, unknown>): PriceInfo {
+  const offers = node.offers;
+  if (!offers) {
+    return { priceMin: 0, priceMax: null, isFree: false };
   }
-  return out;
+  const offerList: Record<string, unknown>[] = Array.isArray(offers)
+    ? (offers.filter(
+        (o) => o && typeof o === "object",
+      ) as Record<string, unknown>[])
+    : [offers as Record<string, unknown>];
+
+  let minPrice: number | null = null;
+  let maxPrice: number | null = null;
+
+  for (const offer of offerList) {
+    const low = toNumber(offer.lowPrice);
+    const high = toNumber(offer.highPrice);
+    const flat = toNumber(offer.price);
+    const candidates = [low, high, flat].filter(
+      (n): n is number => n !== null,
+    );
+    for (const c of candidates) {
+      if (minPrice === null || c < minPrice) minPrice = c;
+      if (maxPrice === null || c > maxPrice) maxPrice = c;
+    }
+  }
+
+  if (minPrice === null && maxPrice === null) {
+    return { priceMin: 0, priceMax: null, isFree: false };
+  }
+  if (minPrice === 0 && (maxPrice === 0 || maxPrice === null)) {
+    return { priceMin: null, priceMax: null, isFree: true };
+  }
+  return {
+    priceMin: minPrice,
+    priceMax: maxPrice,
+    isFree: false,
+  };
+}
+
+function toNumber(v: unknown): number | null {
+  if (typeof v === "number" && Number.isFinite(v)) return v;
+  if (typeof v === "string") {
+    const n = Number.parseFloat(v);
+    return Number.isFinite(n) ? n : null;
+  }
+  return null;
 }
 
 const adapter: SourceAdapter = {
   id: ID,
   tier: "scrape",
-  verificationLevel: "official",
+  verificationLevel: "community",
 
   async fetch(): Promise<FetchResult> {
     const events: RawEvent[] = [];
     const errors: SourceError[] = [];
     const fetchedAt = new Date();
 
-    // Single network call: verify the events page is reachable and not
-    // anti-bot blocked (B6 / fetchHtml throws if it detects an interstitial).
-    // We don't parse anything from the response — the calendar is a client-
-    // side Elfsight widget — but a non-200 here is signal that the site is
-    // down or the URL changed, and we surface that as a fetch error.
+    let entries: ListingEntry[] = [];
     try {
-      await fetchHtml(LISTING_URL);
+      const { html } = await fetchHtml(LISTING_URL);
+      entries = parseListingEntries(html);
+      if (entries.length === 0) {
+        errors.push({
+          source: ID,
+          stage: "parse",
+          message:
+            `no Spark Social SF events matched on ${LISTING_URL} — venue may have no upcoming Eventbrite listings, or the JSON-LD format changed`,
+          retryable: false,
+          occurredAt: new Date(),
+        });
+        return { events, errors, fetchedAt };
+      }
     } catch (err) {
       errors.push({
         source: ID,
@@ -270,22 +342,51 @@ const adapter: SourceAdapter = {
         retryable: true,
         occurredAt: new Date(),
       });
-      // Continue: schedule expansion does not actually depend on the fetch
-      // succeeding (operating hours are baked in). But we DO record the
-      // error so the runner knows the upstream is degraded.
+      return { events, errors, fetchedAt };
     }
 
-    const dates = nextLocalDates(fetchedAt, HORIZON_DAYS);
-    for (const localDate of dates) {
+    // B3: cap detail fetches.
+    const capped = entries.slice(0, MAX_DETAIL_FETCHES);
+    const seenExternalIds = new Set<string>();
+
+    for (const entry of capped) {
       try {
-        const ev = buildDailyEvent(localDate, fetchedAt);
-        if (ev) events.push(ev);
+        const { $ } = await fetchHtml(entry.url);
+        const eventNodes = parseJsonLd($).filter(isEventNode);
+        // Prefer the node whose name matches the listing entry name; fall
+        // back to the first event node on the page.
+        const node =
+          eventNodes.find(
+            (n) =>
+              typeof n.name === "string" &&
+              n.name.trim().toLowerCase() === entry.name.trim().toLowerCase(),
+          ) ?? eventNodes[0];
+        if (!node) {
+          errors.push({
+            source: ID,
+            externalId: entry.url,
+            stage: "parse",
+            message: `no Event JSON-LD on detail page ${entry.url}`,
+            retryable: false,
+            occurredAt: new Date(),
+          });
+          continue;
+        }
+        const raw = detailNodeToRawEvent(node, entry.url, fetchedAt);
+        if (!raw) continue;
+        // D6: filter past-dated events (defensive — Eventbrite listings are
+        // forward-looking but date-tied events can flip past mid-run).
+        if (raw.startTimeUtc.getTime() < fetchedAt.getTime()) continue;
+        if (seenExternalIds.has(raw.identity.externalId)) continue;
+        seenExternalIds.add(raw.identity.externalId);
+        events.push(raw);
       } catch (err) {
         errors.push({
           source: ID,
-          stage: "parse",
+          externalId: entry.url,
+          stage: "fetch",
           message: err instanceof Error ? err.message : String(err),
-          retryable: false,
+          retryable: true,
           occurredAt: new Date(),
         });
       }
@@ -311,7 +412,7 @@ const adapter: SourceAdapter = {
       endTimeUtc: raw.endTimeUtc ?? null,
       timezone: raw.timezone,
       category: raw.primaryCategory,
-      pricing: raw.pricing ?? { priceMin: null, priceMax: null, isFree: false },
+      pricing: raw.pricing ?? { priceMin: 0, priceMax: null, isFree: false },
       venue: raw.venue,
       recurrence: raw.recurrence ?? null,
       verificationLevel: raw.verificationLevel,
