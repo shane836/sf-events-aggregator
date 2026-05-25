@@ -287,6 +287,11 @@ const adapter: SourceAdapter = {
       );
     });
 
+    // D6: filter out past-dated events. The published sheet includes prior
+    // weeks' shows; we keep a 24h grace window for shows currently in
+    // progress (start_time < now() - 1 day → drop).
+    const cutoff = new Date(fetchedAt.getTime() - 24 * 60 * 60 * 1000);
+
     for (const row of sfRows) {
       const start = csvRowToUtc(row.date, row.time);
       if (!start) {
@@ -300,6 +305,8 @@ const adapter: SourceAdapter = {
         });
         continue;
       }
+
+      if (start < cutoff) continue;
 
       const sourceUrl = row.ticket_url?.trim();
       if (!sourceUrl) {
