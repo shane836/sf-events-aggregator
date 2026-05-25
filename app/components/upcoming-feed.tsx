@@ -38,7 +38,7 @@ export function UpcomingFeed({
         <SectionHeader />
         <p
           data-feed-empty
-          className="rounded-md border border-dashed border-zinc-800 px-4 py-6 text-sm text-zinc-500"
+          className="rounded-md border border-dashed border-zinc-800 px-4 py-6 text-sm text-zinc-400"
         >
           No events in the next two weeks matching your filters.
         </p>
@@ -70,7 +70,7 @@ function SectionHeader() {
       >
         Upcoming Fun &amp; Cheap Events
       </h2>
-      <span className="font-mono text-[10px] uppercase tracking-widest text-zinc-600">
+      <span className="font-mono text-[10px] uppercase tracking-widest text-zinc-400">
         next 14 days
       </span>
     </div>
@@ -95,8 +95,8 @@ function FeedRow({
     <li
       data-feed-row
       data-category={event.category}
-      data-event-card
-      className="grid grid-cols-[64px_1fr_auto] items-center gap-3 px-3 py-2 text-sm hover:bg-zinc-900/40 sm:grid-cols-[80px_1fr_auto_auto] sm:gap-4 sm:px-4"
+      data-event-card={event.id}
+      className="grid grid-cols-[64px_1fr_auto] items-center gap-3 px-3 py-3 text-sm hover:bg-zinc-900/40 sm:grid-cols-[80px_1fr_auto_auto] sm:gap-4 sm:px-4"
     >
       <div
         data-feed-date
@@ -106,28 +106,34 @@ function FeedRow({
         <span className="text-zinc-200">
           {dateStamp.month} {dateStamp.day}
         </span>
-        <span className="text-zinc-500">{time}</span>
+        <span className="text-zinc-400">{time}</span>
       </div>
 
-      <div className="min-w-0 flex flex-col gap-0.5">
-        <Link
-          href={detailHref}
-          data-event-link={event.id}
-          scroll={false}
-          aria-label={`${event.title} at ${event.venue.name}`}
-          className="line-clamp-1 text-zinc-100 hover:text-white focus-visible:outline-none focus-visible:underline"
+      <Link
+        href={detailHref}
+        data-event-link={event.id}
+        scroll={false}
+        aria-label={`${event.title} at ${event.venue.name}`}
+        className="flex min-h-[44px] min-w-0 flex-col justify-center gap-0.5 hover:text-white focus-visible:outline-none focus-visible:underline"
+      >
+        <span
+          data-event-title
+          className="line-clamp-1 text-base font-medium leading-6 text-zinc-100"
         >
           <span
             aria-hidden="true"
             className={`mr-2 inline-block h-1.5 w-1.5 rounded-full align-middle ${style.dot}`}
           />
           {event.title}
-        </Link>
-        <span className="line-clamp-1 text-xs text-zinc-400">
+        </span>
+        <span
+          data-venue
+          className="line-clamp-1 text-sm leading-5 text-zinc-400"
+        >
           {event.venue.name}
           {event.venue.neighborhood ? ` · ${event.venue.neighborhood}` : ""}
         </span>
-      </div>
+      </Link>
 
       <span
         data-price
@@ -150,7 +156,7 @@ function FeedRow({
           rel="noreferrer noopener"
           aria-label={`Open source for ${event.title}`}
           data-source-link={event.id}
-          className="inline-flex h-8 w-8 items-center justify-center rounded-md text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-zinc-400"
+          className="inline-flex h-11 w-11 items-center justify-center rounded-md text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-zinc-400"
         >
           ↗
         </a>

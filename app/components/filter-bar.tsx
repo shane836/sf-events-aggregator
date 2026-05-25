@@ -44,6 +44,11 @@ export function FilterBar({
   const preset =
     (params.get("preset") as DatePreset | null) ?? "week";
   const neighborhood = params.get("neighborhood") ?? "";
+  // When a real view-mode is selected (?view=) or a date is anchored
+  // (?date=), the legacy preset row is redundant with the prev/next nav.
+  // Hide it to remove the confusing dual-control state.
+  const viewModeActive =
+    params.get("view") != null || params.get("date") != null;
 
   const replace = useCallback(
     (next: URLSearchParams) => {
@@ -138,29 +143,33 @@ export function FilterBar({
 
         {/* Date + Neighborhood + Reset */}
         <div className="flex flex-wrap items-center gap-2">
-          <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-zinc-400">
-            When
-          </span>
-          {PRESET_ORDER.map((p) => {
-            const active = preset === p;
-            const label = PRESET_LABELS[p];
-            return (
-              <button
-                key={p}
-                type="button"
-                data-preset={p}
-                aria-pressed={active}
-                onClick={() => setPreset(p)}
-                className={`inline-flex min-h-[44px] items-center rounded-md px-3 text-xs transition-colors ${
-                  active
-                    ? "bg-zinc-100 text-zinc-900"
-                    : "text-zinc-400 ring-1 ring-inset ring-zinc-800 hover:text-zinc-200 hover:ring-zinc-600"
-                }`}
-              >
-                {label}
-              </button>
-            );
-          })}
+          {viewModeActive ? null : (
+            <>
+              <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-zinc-400">
+                When
+              </span>
+              {PRESET_ORDER.map((p) => {
+                const active = preset === p;
+                const label = PRESET_LABELS[p];
+                return (
+                  <button
+                    key={p}
+                    type="button"
+                    data-preset={p}
+                    aria-pressed={active}
+                    onClick={() => setPreset(p)}
+                    className={`inline-flex min-h-[44px] items-center rounded-md px-3 text-xs transition-colors ${
+                      active
+                        ? "bg-zinc-100 text-zinc-900"
+                        : "text-zinc-400 ring-1 ring-inset ring-zinc-800 hover:text-zinc-200 hover:ring-zinc-600"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </>
+          )}
 
           <div className="ml-auto flex items-center gap-2">
             <label htmlFor="neighborhood" className="sr-only">
