@@ -37,6 +37,12 @@ yarn-error.log*
 # vercel
 .vercel
 
+# Claude Code per-project state + scratch worktrees
+.claude
+
+# test/ingest scratch logs
+/tmp-logs
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
