@@ -72,10 +72,17 @@ const adapter: SourceAdapter = {
         return { events, errors, fetchedAt };
       }
 
+      // D6: filter out past-dated events. The Verdi listing page includes
+      // some past events; we keep a 24h grace window for shows currently in
+      // progress (start_time < now() - 1 day → drop).
+      const cutoff = new Date(fetchedAt.getTime() - 24 * 60 * 60 * 1000);
+
       for (const node of nodes) {
         try {
           const raw = toRawEvent(node, fetchedAt);
-          if (raw) events.push(raw);
+          if (!raw) continue;
+          if (raw.startTimeUtc < cutoff) continue;
+          events.push(raw);
         } catch (err) {
           errors.push({
             source: ID,
