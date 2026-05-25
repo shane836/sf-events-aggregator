@@ -9,8 +9,6 @@ import { expect, test } from "@playwright/test";
  * dim is intentionally mobile-only (C1, C7) or desktop-only.
  */
 
-const KNOWN_DATE = "2026-05-25"; // Monday — used to land in a populated view
-
 test.describe("C. readability", () => {
   test("C1: body text on event cards ≥ 14px @ mobile", async ({
     page,
