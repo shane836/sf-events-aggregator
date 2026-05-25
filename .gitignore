@@ -37,8 +37,9 @@ yarn-error.log*
 # vercel
 .vercel
 
-# Claude Code per-project state + scratch worktrees
-.claude
+# Scratch git worktrees (worktrees can't be committed anyway — git refuses).
+# Per-project Claude Code settings under .claude/ ARE tracked.
+.claude/worktrees/
 
 # test/ingest scratch logs
 /tmp-logs
