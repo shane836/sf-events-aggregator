@@ -1,0 +1,68 @@
+name: ingest
+
+# Daily ingestion cron.
+#
+# Schedule: 11:00 UTC = 04:00 PDT (March-November) / 03:00 PST (November-March).
+# We accept the 1-hour drift during PST rather than running two crons; revisit
+# in Nov 2026 if 3am PST becomes a problem (e.g. source TZ assumptions).
+#
+# Strategy: one matrix job per adapter in lib/sources (excluding types.ts),
+# discovered dynamically by list-sources. Per-job failure does NOT fail the
+# workflow — a single bad source must not silence the rest. The job still
+# exits non-zero so the run summary surfaces it.
+on:
+  schedule:
+    - cron: "0 11 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: ingest-${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  list-sources:
+    runs-on: ubuntu-latest
+    outputs:
+      sources: ${{ steps.find.outputs.sources }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: find
+        name: Discover source adapters
+        run: |
+          sources=$(ls lib/sources/*.ts | xargs -n1 basename -s .ts | grep -v '^types$' | jq -R -s -c 'split("\n")[:-1]')
+          echo "Discovered sources: $sources"
+          echo "sources=$sources" >> "$GITHUB_OUTPUT"
+
+  ingest:
+    needs: list-sources
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        source: ${{ fromJson(needs.list-sources.outputs.sources) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "26"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run ingest for ${{ matrix.source }}
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          TICKETMASTER_CONSUMER_KEY: ${{ secrets.TICKETMASTER_CONSUMER_KEY }}
+        run: |
+          set -o pipefail
+          echo "## ${{ matrix.source }}" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          npx tsx ingest/run.ts "${{ matrix.source }}" 2>&1 | tee -a "$GITHUB_STEP_SUMMARY"
+          status=${PIPESTATUS[0]}
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "Exit code: $status" >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"
