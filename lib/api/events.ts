@@ -47,8 +47,20 @@ export type EventsQuery = {
   limit?: number;
 };
 
-function originForServer(): string {
-  // On Vercel the env var is set; locally we fall back to localhost.
+async function originForServer(): Promise<string> {
+  // Prefer the incoming request's own host — survives Vercel preview URLs,
+  // production aliases, and local dev without env-var configuration.
+  try {
+    const { headers } = await import("next/headers");
+    const h = await headers();
+    const host = h.get("x-forwarded-host") ?? h.get("host");
+    if (host) {
+      const proto = h.get("x-forwarded-proto") ?? (host.includes("localhost") ? "http" : "https");
+      return `${proto}://${host}`;
+    }
+  } catch {
+    // headers() throws outside a request scope — fall through to env.
+  }
   if (process.env.NEXT_PUBLIC_SITE_URL) return process.env.NEXT_PUBLIC_SITE_URL;
   if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;
   const port = process.env.PORT ?? "3000";
@@ -67,7 +79,8 @@ export async function fetchEvents(q: EventsQuery = {}): Promise<ApiResponse> {
   if (q.neighborhood) sp.set("neighborhood", q.neighborhood);
   if (q.limit) sp.set("limit", String(q.limit));
 
-  const url = `${originForServer()}/api/events?${sp.toString()}`;
+  const origin = await originForServer();
+  const url = `${origin}/api/events?${sp.toString()}`;
   const res = await fetch(url, {
     next: { revalidate: 900 },
     headers: { accept: "application/json" },
