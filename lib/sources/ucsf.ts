@@ -1,24 +1,34 @@
-import type { SourceAdapter, FetchResult, RawEvent, NormalizedRow } from "./types";
 import { fetchICalEvents, splitLocation } from "@/lib/ical";
-import { fingerprint, priceDisplay } from "@/lib/normalize";
+import { fingerprint } from "@/lib/identity";
+import type {
+  FetchResult,
+  NormalizedEvent,
+  Provenance,
+  RawEvent,
+  SourceAdapter,
+  SourceError,
+} from "./types";
 
 const ID = "ical:ucsf";
 const FEED_URL = "https://calendar.ucsf.edu/calendar/1.ics";
+const TZ = "America/Los_Angeles";
 const DEFAULT_NEIGHBORHOOD = "Parnassus / Mission Bay";
 
-export const adapter: SourceAdapter = {
+const adapter: SourceAdapter = {
   id: ID,
   tier: "ical",
-  defaultCategory: "lectures",
+  verificationLevel: "trusted_partner",
 
   async fetch(): Promise<FetchResult> {
     const events: RawEvent[] = [];
-    const errors: FetchResult["errors"] = [];
+    const errors: SourceError[] = [];
+    const fetchedAt = new Date();
 
     try {
       const vevents = await fetchICalEvents(FEED_URL, { horizonDays: 365 });
       for (const ev of vevents) {
         if (!ev.start) continue;
+
         const uid = typeof ev.uid === "string" ? ev.uid : String(ev.uid);
         const title =
           typeof ev.summary === "string"
@@ -37,66 +47,72 @@ export const adapter: SourceAdapter = {
         );
 
         events.push({
-          sourceId: uid,
+          identity: {
+            source: ID,
+            externalId: uid,
+            sourceUrl,
+          },
           title,
           description,
-          startTime: ev.start,
-          endTime: ev.end ?? null,
-          venueName: name,
-          venueAddress: address,
-          venueLat: null,
-          venueLng: null,
-          sourceUrl,
-          priceMin: null,
-          priceMax: null,
-          isFree: true, // UCSF academic events are overwhelmingly free
+          startTimeUtc: ev.start,
+          endTimeUtc: ev.end ?? null,
+          timezone: TZ,
+          venue: {
+            name,
+            neighborhood: DEFAULT_NEIGHBORHOOD,
+            address: address ?? null,
+            lat: null,
+            lng: null,
+            timezone: TZ,
+          },
+          primaryCategory: "lectures",
+          pricing: {
+            priceMin: null,
+            priceMax: null,
+            isFree: true, // UCSF academic events are overwhelmingly free
+          },
+          recurrence: null,
+          verificationLevel: "trusted_partner",
           rawPayload: { uid, summary: title },
+          fetchedAt,
         });
       }
     } catch (err) {
       errors.push({
-        message: `fetch failed: ${err instanceof Error ? err.message : String(err)}`,
+        source: ID,
+        stage: "fetch",
+        message: err instanceof Error ? err.message : String(err),
+        retryable: true,
+        occurredAt: new Date(),
       });
     }
-    return { events, errors };
+
+    return { events, errors, fetchedAt };
   },
 
-  normalize(raw: RawEvent): NormalizedRow {
-    const fp = fingerprint({
+  normalize(raw: RawEvent, provenance: Provenance): NormalizedEvent {
+    const canonicalFingerprint = fingerprint({
       title: raw.title,
-      venueName: raw.venueName,
-      startTime: raw.startTime,
+      venueName: raw.venue.name,
+      startTimeUtc: raw.startTimeUtc,
+      timezone: raw.timezone,
     });
+
     return {
-      venue: {
-        name: raw.venueName,
-        neighborhood: DEFAULT_NEIGHBORHOOD,
-        address: raw.venueAddress ?? null,
-        lat: raw.venueLat != null ? raw.venueLat.toString() : null,
-        lng: raw.venueLng != null ? raw.venueLng.toString() : null,
-        primaryCategory: this.defaultCategory,
-        sourceMetadata: null,
-      },
-      event: {
-        sourceId: raw.sourceId,
-        source: this.id,
-        sourceUrl: raw.sourceUrl,
-        title: raw.title,
-        description: raw.description ?? null,
-        category: raw.categoryHint ?? this.defaultCategory,
-        startTime: raw.startTime,
-        endTime: raw.endTime ?? null,
-        priceMin: raw.priceMin != null ? raw.priceMin.toString() : null,
-        priceMax: raw.priceMax != null ? raw.priceMax.toString() : null,
-        isFree: raw.isFree ?? false,
-        priceDisplay: priceDisplay({
-          priceMin: raw.priceMin,
-          priceMax: raw.priceMax,
-          isFree: raw.isFree,
-        }),
-        rawPayload: raw.rawPayload,
-        fingerprint: fp,
-      },
+      canonicalFingerprint,
+      identity: raw.identity,
+      title: raw.title,
+      description: raw.description ?? null,
+      startTimeUtc: raw.startTimeUtc,
+      endTimeUtc: raw.endTimeUtc ?? null,
+      timezone: raw.timezone,
+      category: raw.primaryCategory,
+      pricing: raw.pricing ?? { priceMin: null, priceMax: null, isFree: false },
+      venue: raw.venue,
+      recurrence: raw.recurrence ?? null,
+      verificationLevel: raw.verificationLevel,
+      rawPayload: raw.rawPayload,
+      provenance,
     };
   },
 };

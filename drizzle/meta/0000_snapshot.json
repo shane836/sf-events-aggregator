@@ -1,5 +1,5 @@
 {
-  "id": "c94acb3c-19c0-4eda-9963-0a488b4c8826",
+  "id": "c77e1932-3c1e-44ac-a664-83719e4841b2",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -36,7 +36,7 @@
         },
         "event_count": {
           "name": "event_count",
-          "type": "numeric(6, 0)",
+          "type": "integer",
           "primaryKey": false,
           "notNull": true
         }
@@ -60,14 +60,14 @@
           "notNull": true,
           "default": "gen_random_uuid()"
         },
-        "source_id": {
-          "name": "source_id",
+        "source": {
+          "name": "source",
           "type": "text",
           "primaryKey": false,
           "notNull": true
         },
-        "source": {
-          "name": "source",
+        "external_id": {
+          "name": "external_id",
           "type": "text",
           "primaryKey": false,
           "notNull": true
@@ -77,6 +77,12 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true
+        },
+        "source_version": {
+          "name": "source_version",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         },
         "title": {
           "name": "title",
@@ -97,17 +103,23 @@
           "primaryKey": false,
           "notNull": true
         },
-        "start_time": {
-          "name": "start_time",
+        "start_time_utc": {
+          "name": "start_time_utc",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true
         },
-        "end_time": {
-          "name": "end_time",
+        "end_time_utc": {
+          "name": "end_time_utc",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
+        },
+        "timezone": {
+          "name": "timezone",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
         },
         "venue_id": {
           "name": "venue_id",
@@ -134,11 +146,42 @@
           "notNull": true,
           "default": false
         },
-        "price_display": {
-          "name": "price_display",
+        "series_id": {
+          "name": "series_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "occurrence_id": {
+          "name": "occurrence_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "canonical_fingerprint": {
+          "name": "canonical_fingerprint",
           "type": "text",
           "primaryKey": false,
           "notNull": true
+        },
+        "verification_level": {
+          "name": "verification_level",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "secondary_sources": {
+          "name": "secondary_sources",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'"
+        },
+        "provenance": {
+          "name": "provenance",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
         },
         "raw_payload": {
           "name": "raw_payload",
@@ -152,20 +195,14 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
-        },
-        "fingerprint": {
-          "name": "fingerprint",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
         }
       },
       "indexes": {
-        "events_fingerprint_idx": {
-          "name": "events_fingerprint_idx",
+        "events_canonical_fingerprint_idx": {
+          "name": "events_canonical_fingerprint_idx",
           "columns": [
             {
-              "expression": "fingerprint",
+              "expression": "canonical_fingerprint",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -176,8 +213,8 @@
           "method": "btree",
           "with": {}
         },
-        "events_source_sourceid_idx": {
-          "name": "events_source_sourceid_idx",
+        "events_source_external_id_idx": {
+          "name": "events_source_external_id_idx",
           "columns": [
             {
               "expression": "source",
@@ -186,7 +223,7 @@
               "nulls": "last"
             },
             {
-              "expression": "source_id",
+              "expression": "external_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -197,11 +234,11 @@
           "method": "btree",
           "with": {}
         },
-        "events_start_time_idx": {
-          "name": "events_start_time_idx",
+        "events_start_time_utc_idx": {
+          "name": "events_start_time_utc_idx",
           "columns": [
             {
-              "expression": "start_time",
+              "expression": "start_time_utc",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -241,6 +278,21 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "events_series_idx": {
+          "name": "events_series_idx",
+          "columns": [
+            {
+              "expression": "series_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {
@@ -264,6 +316,119 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.ingestion_runs": {
+      "name": "ingestion_runs",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "source": {
+          "name": "source",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "started_at": {
+          "name": "started_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "completed_at": {
+          "name": "completed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "fetched": {
+          "name": "fetched",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "inserted": {
+          "name": "inserted",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "skipped": {
+          "name": "skipped",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "error_count": {
+          "name": "error_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "cursor": {
+          "name": "cursor",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "errors": {
+          "name": "errors",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "ingestion_runs_source_idx": {
+          "name": "ingestion_runs_source_idx",
+          "columns": [
+            {
+              "expression": "source",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "ingestion_runs_started_idx": {
+          "name": "ingestion_runs_started_idx",
+          "columns": [
+            {
+              "expression": "started_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.venues": {
       "name": "venues",
       "schema": "",
@@ -274,6 +439,12 @@
           "primaryKey": true,
           "notNull": true,
           "default": "gen_random_uuid()"
+        },
+        "normalized_name": {
+          "name": "normalized_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
         },
         "name": {
           "name": "name",
@@ -305,6 +476,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "timezone": {
+          "name": "timezone",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "primary_category": {
           "name": "primary_category",
           "type": "category",
@@ -320,17 +497,11 @@
         }
       },
       "indexes": {
-        "venues_name_address_idx": {
-          "name": "venues_name_address_idx",
+        "venues_normalized_name_idx": {
+          "name": "venues_normalized_name_idx",
           "columns": [
             {
-              "expression": "name",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "address",
+              "expression": "normalized_name",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
