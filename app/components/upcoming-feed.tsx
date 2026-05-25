@@ -68,7 +68,7 @@ function SectionHeader() {
         data-feed-header
         className="font-mono text-xs uppercase tracking-[0.2em] text-zinc-400"
       >
-        Upcoming Fun &amp; Cheap Events
+        Upcoming Events
       </h2>
       <span className="font-mono text-[10px] uppercase tracking-widest text-zinc-400">
         next 14 days
