@@ -15,8 +15,12 @@ import { DayView } from "./components/day-view";
 import { EmptyState } from "./components/empty-state";
 import { EventModal } from "./components/event-modal";
 import { FilterBar } from "./components/filter-bar";
+import { UpcomingFeed } from "./components/upcoming-feed";
 import { ViewToggle } from "./components/view-toggle";
 import { WeekGrid } from "./components/week-grid";
+
+const FEED_LOOKAHEAD_DAYS = 14;
+const FEED_MAX_ROWS = 40;
 
 /**
  * Calendar home page. Reads filters + view mode from `searchParams`
@@ -48,13 +52,27 @@ export default async function Home({
     ? viewToRange(filters.view, anchorDate)
     : presetToRange(filters.preset, new Date(), filters.from, filters.to);
 
-  const data = await fetchEvents({
-    categories: filters.categories.length ? filters.categories : undefined,
-    from: range.from,
-    to: range.to,
-    neighborhood: filters.neighborhood ?? undefined,
-    limit: 500,
-  });
+  // Calendar fetch — events for the current view's window.
+  // Feed fetch — always next FEED_LOOKAHEAD_DAYS regardless of view (the feed
+  // is a separate axis from the calendar). Both calls hit /api/events; the
+  // route handler returns sorted-ascending events (rubric B2 + B8).
+  const feedWindow = lookaheadWindow(new Date(), FEED_LOOKAHEAD_DAYS);
+  const [data, feedData] = await Promise.all([
+    fetchEvents({
+      categories: filters.categories.length ? filters.categories : undefined,
+      from: range.from,
+      to: range.to,
+      neighborhood: filters.neighborhood ?? undefined,
+      limit: 500,
+    }),
+    fetchEvents({
+      categories: filters.categories.length ? filters.categories : undefined,
+      from: feedWindow.from,
+      to: feedWindow.to,
+      neighborhood: filters.neighborhood ?? undefined,
+      limit: FEED_MAX_ROWS,
+    }),
+  ]);
 
   // Neighborhood dropdown options: derived from the events visible without the
   // neighborhood filter applied (so the dropdown doesn't collapse to one).
@@ -88,6 +106,10 @@ export default async function Home({
       </Suspense>
 
       <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-4 sm:px-6 sm:py-6">
+        <div className="mb-6">
+          <UpcomingFeed events={feedData.events} currentSearch={currentSearch} />
+        </div>
+
         <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <Suspense fallback={null}>
             <CalendarNav
@@ -154,4 +176,15 @@ function distinctNeighborhoods(events: ApiEvent[]): string[] {
     if (e.venue.neighborhood) set.add(e.venue.neighborhood);
   }
   return Array.from(set).sort((a, b) => a.localeCompare(b));
+}
+
+/**
+ * 14-day lookahead window from `now`, returned as UTC ISO strings the API
+ * accepts. Bounded by minute precision so the API filter is stable across
+ * the request lifetime.
+ */
+function lookaheadWindow(now: Date, days: number): { from: string; to: string } {
+  const from = new Date(now.getTime());
+  const to = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
+  return { from: from.toISOString(), to: to.toISOString() };
 }

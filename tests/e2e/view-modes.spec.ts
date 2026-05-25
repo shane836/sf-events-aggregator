@@ -108,6 +108,7 @@ test.describe("A. view modes", () => {
     await page.locator('[data-nav="next"]').click();
     await expect(page).toHaveURL(/date=2026-05-26/);
     await page.locator('[data-nav="prev"]').click();
+    await expect(page).not.toHaveURL(/date=2026-05-26/);
     await page.locator('[data-nav="prev"]').click();
     await expect(page).toHaveURL(/date=2026-05-24/);
 
@@ -121,6 +122,7 @@ test.describe("A. view modes", () => {
     await page.locator('[data-nav="next"]').click();
     await expect(page).toHaveURL(/date=2026-06-25/);
     await page.locator('[data-nav="prev"]').click();
+    await expect(page).not.toHaveURL(/date=2026-06-25/);
     await page.locator('[data-nav="prev"]').click();
     await expect(page).toHaveURL(/date=2026-04-25/);
   });
@@ -160,6 +162,7 @@ test.describe("A. view modes", () => {
     await page.keyboard.press("ArrowRight");
     await expect(page).toHaveURL(/date=2026-05-26/);
     await page.keyboard.press("ArrowLeft");
+    await expect(page).not.toHaveURL(/date=2026-05-26/);
     await page.keyboard.press("ArrowLeft");
     await expect(page).toHaveURL(/date=2026-05-24/);
     // T returns to today (URL drops ?date=)
