@@ -134,16 +134,17 @@ export function DigestModal({ onClose }: Props): React.ReactElement {
       role="dialog"
       aria-modal="true"
       aria-labelledby="digest-modal-title"
-      className="fixed inset-0 z-50 flex items-center justify-center px-4"
+      className="fixed inset-0 z-50 overflow-y-auto"
       data-testid="digest-modal"
     >
       <button
         type="button"
         aria-label="Close modal"
         onClick={onClose}
-        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+        className="fixed inset-0 bg-black/60 backdrop-blur-sm"
         data-testid="digest-modal-backdrop"
       />
+      <div className="relative flex min-h-full items-start justify-center p-4 sm:items-center">
       <div
         ref={dialogRef}
         className="relative z-10 w-full max-w-md rounded-lg border border-zinc-700 bg-zinc-900 p-6 text-zinc-100 shadow-2xl"
@@ -280,6 +281,7 @@ export function DigestModal({ onClose }: Props): React.ReactElement {
             </div>
           </form>
         )}
+      </div>
       </div>
     </div>
   );
