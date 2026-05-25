@@ -14,7 +14,8 @@
     "ingest": "tsx --env-file=.env.local ingest/run.ts",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "lighthouse:m5": "node scripts/lighthouse-m5.mjs"
   },
   "dependencies": {
     "@react-email/components": "^1.0.12",
@@ -38,12 +39,14 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "chrome-launcher": "^1.2.1",
     "dotenv": "^17.4.2",
     "drizzle-kit": "^0.31.10",
     "eslint": "^9",
     "eslint-config-next": "16.2.6",
     "html-validate": "^11.3.0",
     "jsdom": "^29.1.1",
+    "lighthouse": "^13.3.0",
     "tailwindcss": "^4",
     "tsx": "^4.22.3",
     "typescript": "^5",

@@ -16,10 +16,48 @@ const geistMono = Geist_Mono({
   weight: ["400", "500"],
 });
 
+const SITE_URL = "https://sf-events-aggregator-two.vercel.app";
+const SITE_DESCRIPTION =
+  "A daily-refreshed calendar of music, comedy, lectures, dancing, and food across San Francisco. Free, no accounts.";
+
 export const metadata: Metadata = {
-  title: "SF Events",
-  description:
-    "Music, comedy, lectures, dancing, and food across San Francisco.",
+  metadataBase: new URL(SITE_URL),
+  title: {
+    default: "SF Events — Music, Comedy, Lectures, Dancing, Food",
+    template: "%s · SF Events",
+  },
+  description: SITE_DESCRIPTION,
+  applicationName: "SF Events",
+  keywords: [
+    "San Francisco",
+    "events",
+    "calendar",
+    "music",
+    "comedy",
+    "lectures",
+    "dancing",
+    "food",
+    "things to do in SF",
+  ],
+  openGraph: {
+    type: "website",
+    title: "SF Events — Music, Comedy, Lectures, Dancing, Food",
+    description: SITE_DESCRIPTION,
+    url: SITE_URL,
+    siteName: "SF Events",
+    locale: "en_US",
+    // Image auto-resolved from app/opengraph-image.tsx
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "SF Events — Music, Comedy, Lectures, Dancing, Food",
+    description: SITE_DESCRIPTION,
+    // Image auto-resolved from app/twitter-image.tsx or opengraph-image.tsx
+  },
+  robots: {
+    index: true,
+    follow: true,
+  },
 };
 
 export default function RootLayout({

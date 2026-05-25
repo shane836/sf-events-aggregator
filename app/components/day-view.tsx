@@ -6,6 +6,7 @@ import {
   formatLocalTime,
   localDateKey,
 } from "@/lib/ui/dates";
+import { ResetFiltersLink } from "./reset-filters-link";
 
 /**
  * Day view: chronological agenda for a single date. Denser than the
@@ -43,13 +44,16 @@ export function DayView({
         {formatLocalFullDate(headerIso, tz)}
       </header>
       {dayEvents.length === 0 ? (
-        <p
+        <div
           data-empty-state
-          className="rounded-lg border border-dashed border-zinc-800 px-4 py-8 text-center text-sm text-zinc-500"
+          className="flex flex-col items-center gap-3 rounded-lg border border-dashed border-zinc-800 px-4 py-8 text-center"
         >
-          No events for this day. Try widening filters or navigating with the
-          arrow keys.
-        </p>
+          <p className="text-sm leading-5 text-zinc-400">
+            No events for this day. Try widening filters or navigating with
+            the arrow keys.
+          </p>
+          <ResetFiltersLink />
+        </div>
       ) : (
         <ul className="flex flex-col divide-y divide-zinc-800/60 rounded-lg border border-zinc-800/80">
           {dayEvents.map((e) => {
@@ -61,7 +65,7 @@ export function DayView({
                 <Link
                   href={`/?${sp.toString()}`}
                   data-event-link={e.id}
-                  data-event-card
+                  data-event-card={e.id}
                   data-category={e.category}
                   scroll={false}
                   aria-label={`${e.title} at ${e.venue.name}, ${formatLocalTime(e.startTimeUtc, e.timezone)}`}
@@ -76,9 +80,14 @@ export function DayView({
                         aria-hidden="true"
                         className={`h-1.5 w-1.5 shrink-0 rounded-full ${style.dot}`}
                       />
-                      <span className="text-zinc-100">{e.title}</span>
+                      <span
+                        data-event-title
+                        className="text-base font-medium leading-6 text-zinc-100"
+                      >
+                        {e.title}
+                      </span>
                     </span>
-                    <span className="text-xs text-zinc-400">
+                    <span className="text-sm leading-5 text-zinc-400">
                       {e.venue.name}
                       {e.venue.neighborhood
                         ? ` · ${e.venue.neighborhood}`

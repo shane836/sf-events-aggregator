@@ -3,6 +3,7 @@ import type { ApiEvent } from "@/lib/api/events";
 import { CATEGORY_STYLES } from "@/lib/ui/categories";
 import { formatLocalTime, localDateKey } from "@/lib/ui/dates";
 import { addDaysIso } from "@/lib/ui/dates";
+import { ResetFiltersLink } from "./reset-filters-link";
 
 /**
  * Week view: 7 columns (Sun..Sat of the week containing `dateKey`), one row.
@@ -33,6 +34,23 @@ export function WeekGrid({
   const today = localDateKey(now.toISOString(), tz);
   const columns = Array.from({ length: 7 }, (_, i) => addDaysIso(sunKey, i));
   const byDate = groupByLocalDate(events);
+
+  if (events.length === 0) {
+    return (
+      <div data-view="week" className="flex flex-col gap-3">
+        <div
+          data-empty-state
+          className="flex flex-col items-center gap-3 rounded-lg border border-dashed border-zinc-800 px-4 py-12 text-center"
+        >
+          <p className="text-sm leading-5 text-zinc-400">
+            No events this week. Try widening filters or navigating with the
+            arrow keys.
+          </p>
+          <ResetFiltersLink />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -87,7 +105,7 @@ export function WeekGrid({
                 {dayEvents.length === 0 ? (
                   <span
                     data-empty-state
-                    className="mt-2 text-center font-mono text-[10px] text-zinc-600"
+                    className="mt-2 text-center font-mono text-[10px] text-zinc-400"
                   >
                     —
                   </span>
@@ -101,7 +119,7 @@ export function WeekGrid({
                         key={e.id}
                         href={`/?${sp.toString()}`}
                         data-event-link={e.id}
-                        data-event-card
+                        data-event-card={e.id}
                         data-category={e.category}
                         scroll={false}
                         aria-label={`${e.title} at ${e.venue.name}, ${formatLocalTime(e.startTimeUtc, e.timezone)}`}
@@ -120,7 +138,7 @@ export function WeekGrid({
                           {e.title}
                         </span>
                         <span
-                          className="font-mono text-[10px] text-zinc-500"
+                          className="font-mono text-[10px] text-zinc-400"
                           data-price
                         >
                           {e.priceDisplay}
