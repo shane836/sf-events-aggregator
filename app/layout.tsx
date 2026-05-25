@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import Link from "next/link";
+import { DigestButton } from "./components/digest-button";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -39,7 +40,9 @@ export default function RootLayout({
           >
             sf events
           </Link>
-          <div data-slot="header-actions" />
+          <div data-slot="header-actions" className="flex items-center gap-2">
+            <DigestButton />
+          </div>
         </header>
         {children}
       </body>

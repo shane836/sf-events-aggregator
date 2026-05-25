@@ -15,7 +15,10 @@ export default defineConfig({
     alias: { "@": resolve(__dirname, ".") },
   },
   test: {
+    // Default Node env. Files that need jsdom opt in with the
+    // `// @vitest-environment jsdom` docblock directive (vitest 4 dropped
+    // `environmentMatchGlobs` — directives or per-project workspaces only).
     environment: "node",
-    include: ["tests/**/*.test.ts"],
+    include: ["tests/**/*.test.{ts,tsx}"],
   },
 });
