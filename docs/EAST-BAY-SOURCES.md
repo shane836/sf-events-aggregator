@@ -50,15 +50,26 @@ Statuses verified as of June 2026 — re-check before implementing (venues close
 | **The Sound Room** (jazz, nonprofit) | 3022 Broadway | Eventbrite | Squarespace; per-event `.ics` links but **no whole-calendar feed**. Best reached via Eventbrite. |
 | **Continental Club** | 1658 12th St (West Oakland) | unknown | WordPress; mostly private events. Low public-event volume. |
 
-**Now in scope (Berkeley / Emeryville):**
-- **The Greek Theatre** (Berkeley, UC campus) — Ticketmaster-ticketed, so
-  ✅ covered by `ticketmaster` (tagged `city=Berkeley`).
-- **UC Theatre**, **Cornerstone Berkeley**, **924 Gilman** (all-ages punk),
-  **Freight & Salvage** (folk, has a clean events calendar) — Berkeley music
-  venues worth bespoke adapters; Freight & Salvage and UC Theatre are the
-  highest-value next targets.
-- **Public Market Emeryville** (5959 Shellmound St) — WordPress events page
-  with recurring "Market Beats" live music; worth a `scrape` adapter.
+**Berkeley — covered via aggregators; no clean first-party venue feed.**
+Berkeley is already pulled in by three working sources: `ticketmaster` queries
+it (Greek Theatre, UC Theatre — both Ticketmaster), `scrape:eventbrite` has a
+Berkeley discovery anchor, and `scrape:funcheapeastbay` detects Berkeley in its
+East Bay feed. A *dedicated venue* scraper was investigated and shelved — same
+wall as Oakland's first-party sites:
+- **Freight & Salvage** (`thefreight.org/shows/`, robots-OK) — WordPress, but
+  the listing carries **no Event JSON-LD** and detail links route to mixed
+  external systems; no iCal (`/events/?ical=1` → 403).
+- **UC Theatre / Greek Theatre** — Ticketmaster, already covered.
+- **Ashkenaz** — Squarespace + VenuePilot, no iCal/JSON-LD on the calendar.
+- **UC Berkeley** (`events.berkeley.edu`) and **Cal Performances** — no working
+  `.ics`/Tribe feed found.
+- **Berkeley Public Library** (`libnet.info`) — per-event Event JSON-LD exists,
+  but the listing is JS-rendered (no static enumeration). A sitemap-driven
+  crawl could work later for library lectures/music.
+
+**Emeryville:** **Public Market Emeryville** (5959 Shellmound St) — WordPress
+events page with recurring "Market Beats" live music; worth a `scrape` adapter.
+Otherwise covered by `scrape:eventbrite` (Emeryville discovery anchor).
 
 **Closed (do not ingest):** Starline Social Club (closed Jan 1 2026), The
 Octopus Literary Salon (closed), Golden Bull (closed Apr 2026), 1-2-3-4 Go!
