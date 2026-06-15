@@ -33,8 +33,13 @@ export function CitySelector() {
     });
   };
 
+  // Ungrouped selections (SF, All East Bay) render first; the rest are grouped
+  // into <optgroup>s by their `group` label, in first-seen order.
   const standalone = CITY_SELECTIONS.filter((c) => !c.group);
-  const eastBay = CITY_SELECTIONS.filter((c) => c.group === "East Bay");
+  const groups: string[] = [];
+  for (const c of CITY_SELECTIONS) {
+    if (c.group && !groups.includes(c.group)) groups.push(c.group);
+  }
 
   return (
     <div className="flex items-center gap-2" aria-busy={isPending}>
@@ -56,13 +61,15 @@ export function CitySelector() {
             {c.label}
           </option>
         ))}
-        <optgroup label="East Bay">
-          {eastBay.map((c) => (
-            <option key={c.value} value={c.value}>
-              {c.label}
-            </option>
-          ))}
-        </optgroup>
+        {groups.map((g) => (
+          <optgroup key={g} label={g}>
+            {CITY_SELECTIONS.filter((c) => c.group === g).map((c) => (
+              <option key={c.value} value={c.value}>
+                {c.label}
+              </option>
+            ))}
+          </optgroup>
+        ))}
       </select>
     </div>
   );

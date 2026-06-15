@@ -22,13 +22,16 @@ describe("resolveCity", () => {
     expect(resolveCity("BERKELEY")).toBe("Berkeley");
     expect(resolveCity("east bay")).toBe("East Bay");
     expect(resolveCity("san francisco")).toBe("San Francisco");
+    // Contra Costa County cities are covered too.
+    expect(resolveCity("walnut creek")).toBe("Walnut Creek");
+    expect(resolveCity("Richmond")).toBe("Richmond");
   });
 
   it("isKnownCity gates on the canonical token", () => {
     expect(isKnownCity("East Bay")).toBe(true);
     expect(isKnownCity("Emeryville")).toBe(true);
     expect(isKnownCity("oakland")).toBe(false); // canonical only
-    expect(isKnownCity("Fremont")).toBe(false);
+    expect(isKnownCity("San Jose")).toBe(false); // out of region
   });
 });
 

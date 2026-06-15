@@ -1,13 +1,12 @@
 /**
- * Metros for the city selector. The app covers San Francisco and the East Bay.
+ * Metros for the city selector. The app covers San Francisco and the East Bay
+ * (Alameda + Contra Costa counties).
  *
  * A *selection* is what the dropdown shows and what rides in the `?city=` URL
  * param. Most selections map 1:1 to a `venues.city` value, but "East Bay" is an
- * umbrella that fans out to several city names. `citiesForSelection()` resolves
- * a selection token to the concrete `venues.city` values the API filters on.
- *
- * Adding a city is a new entry here plus sources that tag their venues with the
- * matching name.
+ * umbrella that fans out to every East Bay city. `citiesForSelection()`
+ * resolves a selection token to the concrete `venues.city` values the API
+ * filters on.
  */
 
 export type CitySelection = {
@@ -21,13 +20,47 @@ export type CitySelection = {
   group?: string;
 };
 
-/** Real `venues.city` values in the East Bay. */
-export const EAST_BAY_CITY_NAMES = [
+const ALAMEDA_COUNTY_CITIES = [
   "Oakland",
   "Berkeley",
-  "Emeryville",
   "Alameda",
+  "Emeryville",
+  "Albany",
+  "Piedmont",
+  "San Leandro",
+  "Hayward",
+  "Castro Valley",
+  "Union City",
+  "Fremont",
+  "Newark",
+  "Dublin",
+  "Pleasanton",
+  "Livermore",
 ] as const;
+
+const CONTRA_COSTA_COUNTY_CITIES = [
+  "Richmond",
+  "El Cerrito",
+  "San Pablo",
+  "Pinole",
+  "Hercules",
+  "Martinez",
+  "Concord",
+  "Pleasant Hill",
+  "Walnut Creek",
+  "Lafayette",
+  "Orinda",
+  "Moraga",
+  "Danville",
+  "San Ramon",
+  "Antioch",
+] as const;
+
+/** Every concrete East Bay `venues.city` value the selector recognizes. */
+export const EAST_BAY_CITY_NAMES: ReadonlyArray<string> = [
+  ...ALAMEDA_COUNTY_CITIES,
+  ...CONTRA_COSTA_COUNTY_CITIES,
+];
 
 /**
  * Catch-all `venues.city` value for East Bay sources that don't expose a
@@ -36,38 +69,64 @@ export const EAST_BAY_CITY_NAMES = [
  */
 export const GENERIC_EAST_BAY = "East Bay";
 
-/** Every concrete city name we ingest/query (used by source adapters). */
+/**
+ * All concrete `venues.city` values we recognize (SF + East Bay). Sources match
+ * event addresses against this when tagging `venue.city`.
+ */
 export const INGEST_CITY_NAMES: ReadonlyArray<string> = [
   "San Francisco",
   ...EAST_BAY_CITY_NAMES,
 ];
 
-export const CITY_SELECTIONS: ReadonlyArray<CitySelection> = [
-  { value: "San Francisco", label: "SF", cities: ["San Francisco"] },
-  {
-    value: "East Bay",
-    label: "All East Bay",
-    cities: [...EAST_BAY_CITY_NAMES, GENERIC_EAST_BAY],
-    group: "East Bay",
-  },
-  { value: "Oakland", label: "Oakland", cities: ["Oakland"], group: "East Bay" },
-  {
-    value: "Berkeley",
-    label: "Berkeley",
-    cities: ["Berkeley"],
-    group: "East Bay",
-  },
-  {
-    value: "Emeryville",
-    label: "Emeryville",
-    cities: ["Emeryville"],
-    group: "East Bay",
-  },
-  { value: "Alameda", label: "Alameda", cities: ["Alameda"], group: "East Bay" },
+/**
+ * Cities Ticketmaster actually queries. The Discovery API bills one query per
+ * `city`, so we only hit the metros with ticketed venues rather than all ~30
+ * East Bay cities — events still get tagged with their real city via
+ * `INGEST_CITY_NAMES`, so smaller-city venues that surface are kept.
+ */
+export const TICKETMASTER_QUERY_CITIES: ReadonlyArray<string> = [
+  "San Francisco",
+  "Oakland",
+  "Berkeley",
+  "Emeryville",
+  "Alameda",
+  "Richmond",
+  "San Leandro",
+  "Hayward",
+  "Walnut Creek",
+  "Concord",
+  "Fremont",
+  "Livermore",
 ];
 
-/** Default selection when no `?city=` param is present. */
 export const DEFAULT_CITY = "San Francisco";
+
+const EAST_BAY_UMBRELLA: CitySelection = {
+  value: "East Bay",
+  label: "All East Bay",
+  cities: [...EAST_BAY_CITY_NAMES, GENERIC_EAST_BAY],
+};
+
+export const CITY_SELECTIONS: ReadonlyArray<CitySelection> = [
+  { value: "San Francisco", label: "SF", cities: ["San Francisco"] },
+  EAST_BAY_UMBRELLA,
+  ...ALAMEDA_COUNTY_CITIES.map(
+    (c): CitySelection => ({
+      value: c,
+      label: c,
+      cities: [c],
+      group: "Alameda County",
+    }),
+  ),
+  ...CONTRA_COSTA_COUNTY_CITIES.map(
+    (c): CitySelection => ({
+      value: c,
+      label: c,
+      cities: [c],
+      group: "Contra Costa County",
+    }),
+  ),
+];
 
 function findSelection(value: string | null | undefined): CitySelection | null {
   if (!value) return null;

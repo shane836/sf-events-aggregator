@@ -38,11 +38,17 @@ const BASE = "https://www.eventbrite.com";
 
 // One discovery listing per East Bay city. `all-events` is the unfiltered city
 // feed; we classify/skip per event afterward.
+// Discovery listings bleed across the wider Bay Area, so a handful of spread-out
+// East Bay anchors (inner ring + West County + Central County) is enough to
+// surface events from every East Bay city; each event is re-tagged with its own
+// city. Kept small because Eventbrite 405-throttles request bursts.
 const DISCOVERY_PATHS: Record<string, string> = {
   Oakland: "/d/ca--oakland/all-events/",
   Berkeley: "/d/ca--berkeley/all-events/",
   Emeryville: "/d/ca--emeryville/all-events/",
   Alameda: "/d/ca--alameda/all-events/",
+  Richmond: "/d/ca--richmond/all-events/",
+  "Walnut Creek": "/d/ca--walnut-creek/all-events/",
 };
 
 function getString(node: Record<string, unknown>, key: string): string | null {
@@ -59,6 +65,10 @@ function getNested(
     return v as Record<string, unknown>;
   }
   return null;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
 }
 
 function numberFrom(v: unknown): number | null {
@@ -271,8 +281,11 @@ const adapter: SourceAdapter = {
     const fetchedAt = new Date();
     const seenIds = new Set<string>();
 
-    for (const path of Object.values(DISCOVERY_PATHS)) {
-      const url = `${BASE}${path}`;
+    const paths = Object.values(DISCOVERY_PATHS);
+    for (let i = 0; i < paths.length; i++) {
+      // Space requests out — Eventbrite 405-throttles bursts.
+      if (i > 0) await sleep(1500);
+      const url = `${BASE}${paths[i]}`;
       try {
         const { $ } = await fetchHtml(url);
         const nodes = extractEventNodes(parseJsonLd($));

@@ -1,5 +1,5 @@
 import { fingerprint } from "@/lib/identity";
-import { INGEST_CITY_NAMES } from "@/lib/ui/cities";
+import { INGEST_CITY_NAMES, TICKETMASTER_QUERY_CITIES } from "@/lib/ui/cities";
 import type {
   Category,
   FetchResult,
@@ -47,9 +47,9 @@ const MAX_PAGES = 5; // 5 * 200 = 1000 events per classification, plenty for a 3
 const PAGE_SIZE = 200;
 const CLASSIFICATIONS = ["Music", "Comedy"] as const;
 // Metros to pull, queried as the Discovery API `city` param. Each result is
-// tagged with `venue.city` (from the API venue's city name) so the calendar's
-// city selector can filter it. SF + the East Bay cities we cover.
-const CITIES: ReadonlyArray<string> = INGEST_CITY_NAMES;
+// tagged with `venue.city` (from the API venue's city name, matched against the
+// full city set) so the calendar's city selector can filter it.
+const CITIES: ReadonlyArray<string> = TICKETMASTER_QUERY_CITIES;
 
 const USER_AGENT =
   "sf-events-aggregator/1.0 (+https://github.com/shane836/sf-events-aggregator)";
@@ -186,7 +186,7 @@ function resolveVenueCity(
   fallback: string,
 ): string {
   if (apiCityName) {
-    const match = CITIES.find(
+    const match = INGEST_CITY_NAMES.find(
       (c) => c.toLowerCase() === apiCityName.toLowerCase(),
     );
     if (match) return match;

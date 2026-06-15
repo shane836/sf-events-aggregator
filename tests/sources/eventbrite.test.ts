@@ -90,7 +90,7 @@ describe("resolveCity", () => {
     expect(resolveCity("Oakland")).toBe("Oakland");
     expect(resolveCity("berkeley")).toBe("Berkeley");
     expect(resolveCity("San Francisco")).toBe("San Francisco");
-    expect(resolveCity("Walnut Creek")).toBeNull();
+    expect(resolveCity("San Jose")).toBeNull(); // South Bay — out of scope
     expect(resolveCity(null)).toBeNull();
   });
 });

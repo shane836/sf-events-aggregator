@@ -1,13 +1,19 @@
 # East Bay Event Sources
 
-Research backing the East Bay expansion — **Oakland, Berkeley, Emeryville,
-Alameda** (verified June 2026). Each entry notes the recommended ingestion
-method against this repo's three source tiers — `api` (e.g. Ticketmaster
-Discovery), `ical` (e.g. UCSF), and `scrape` (JSON-LD / HTML, e.g. Cobb's,
-Funcheap) — plus robots.txt / ToS caveats.
+Research backing the East Bay expansion — the **whole East Bay** (Alameda +
+Contra Costa counties: Oakland, Berkeley, Alameda, Emeryville, Albany,
+Piedmont, San Leandro, Hayward, Fremont, Richmond, El Cerrito, Concord, Walnut
+Creek, Danville, San Ramon, …), verified June 2026. Each entry notes the
+recommended ingestion method against this repo's three source tiers — `api`
+(e.g. Ticketmaster Discovery), `ical` (e.g. UCSF), and `scrape` (JSON-LD /
+HTML, e.g. Cobb's, Funcheap) — plus robots.txt / ToS caveats.
 
-The city selector covers SF plus an **All East Bay** umbrella and the
-individual East Bay cities; `venues.city` carries the metro per event.
+The city selector covers SF, an **All East Bay** umbrella, and every East Bay
+city (grouped by county); `venues.city` carries the metro per event. Events in
+cities we don't query directly still get tagged from their own address and
+surface under "All East Bay" — e.g. an Eventbrite listing in Pleasant Hill is
+tagged `city=Pleasant Hill`. Sources that can't resolve a specific city (the
+Funcheap feed) use a generic `East Bay` bucket.
 
 > **Compliance first.** We honor robots.txt and site ToS (`lib/scrape.ts`
 > aborts on Cloudflare interstitials; see M3 rubric B6). Several sources below
