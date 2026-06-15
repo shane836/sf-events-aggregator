@@ -25,7 +25,8 @@ Statuses verified as of June 2026 — re-check before implementing (venues close
 | --- | --- | --- | --- |
 | `ticketmaster` | api | music, comedy | Now queries **Oakland** + SF and tags `venue.city`. Covers **Fox Theater**, **Paramount Theatre**, and every other Ticketmaster-ticketed Oakland venue. |
 | `ical:omca` | ical | food, lectures, music, dancing | **Oakland Museum of California** public-program feed (`/events/?ical=1`, robots-allowed). Maps "Friday Nights at OMCA / Off the Grid" food-truck nights → food; talks/performances → lectures/music. |
-| `scrape:eventbrite` | scrape | all 5 | **Eventbrite East Bay.** robots allows `/d/` `/e/` `/o/`. Two-phase: harvest event URLs from each city's discovery listing, then parse each event page's schema.org Event JSON-LD. City is tagged from the event's own address (discovery bleeds Bay-wide); events outside our cities/taxonomy are skipped. Covers Comedy Oakland, The Ruckus Revival, The Sound Room, salsa socials, etc. |
+| `scrape:eventbrite` | scrape | all 5 | **Eventbrite East Bay.** robots allows `/d/`. One request per city: read the discovery page's schema.org `ItemList` of ~20 Event nodes (no per-event fetch — Eventbrite 405-throttles bursts). City + geo tagged from each event's own address (discovery bleeds Bay-wide); off-metro/off-taxonomy events skipped. Covers Comedy Oakland, Ruckus Revival, The Sound Room, salsa socials. |
+| `scrape:funcheapeastbay` | scrape | all 5 | **Funcheap East Bay.** There is no `eastbay.funcheap.com`; the East Bay is the location archive `sf.funcheap.com/category/event/event-locations/east-bay/` (same `div.tanbox` markup as the SF food adapter, shared via `lib/funcheap.ts`). Mixed-category feed → keyword-classified, off-taxonomy skipped. City detected from title/venue when a city is named, else the generic **East Bay** bucket. Community-tier. |
 
 ---
 
@@ -100,7 +101,7 @@ Records (not booking shows).
 | Aggregator | Oakland coverage | Structured data | Verdict |
 | --- | --- | --- | --- |
 | **Eventbrite** (`/d/ca--<city>/...`) | Broad | per-event schema.org JSON-LD (discovery API retired) | ✅ Implemented as `scrape:eventbrite`. Powers Comedy Oakland, Ruckus Revival, The Sound Room, many dance socials. |
-| **Funcheap East Bay** (`eastbay.funcheap.com`) | Broad, free/cheap | WordPress listing (same shape as our SF `funcheapfood` scraper) | Good candidate — mirrors the existing Funcheap adapter; community-tier. Verify the East Bay archive path & robots before adding. |
+| **Funcheap East Bay** (`sf.funcheap.com/.../event-locations/east-bay/`) | Broad, free/cheap | WordPress `div.tanbox` listing | ✅ Implemented as `scrape:funcheapeastbay`. (No `eastbay.` subdomain exists — it's a location archive on the main site.) |
 | **SF Station** (`/calendar/east-bay/oakland`) | **Granular** (neighborhood + category) | robots allows `/calendar/`, but format unverified | ⚠️ **Anti-bot 403** on all fetches. Richest taxonomy but needs a headless/allowed approach. |
 | **DoTheBay / eastbay.dothebay.com** | Strong East Bay | Unverified | ⚠️ **Cloudflare 403** — blocked to simple HTTP clients. |
 | **Songkick** (SF Bay Area metro `26330`) | Music only | API **closed** to new devs; robots blocks AI bots | ⚠️ Avoid. No public metro `.ics`/RSS. (Note: metro `88311` is Oakland **Oregon** — wrong.) |
@@ -133,8 +134,8 @@ ticketing backend (Ticketmaster/Eventbrite/TicketWeb) over Facebook itself.
 2. ✅ **`ical:omca`** (done) — free food-truck nights + museum programming.
 3. ✅ **`scrape:eventbrite`** (done) — Comedy Oakland, Ruckus Revival, The
    Sound Room, salsa socials, and broad indie coverage via event-page JSON-LD.
-4. **Funcheap East Bay** (`scrape`) — clone the SF `funcheapfood` adapter for
-   broad free/cheap coverage across all categories.
+4. ✅ **`scrape:funcheapeastbay`** (done) — broad free/cheap coverage across
+   all categories from the East Bay location archive.
 5. **Berkeley venues** (`scrape`/`api`) — Freight & Salvage and UC Theatre
    (clean calendars), Ashkenaz (VenuePilot) for `city=Berkeley` dance.
 

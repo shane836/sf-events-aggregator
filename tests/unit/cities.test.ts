@@ -3,6 +3,7 @@ import {
   citiesForSelection,
   DEFAULT_CITY,
   EAST_BAY_CITY_NAMES,
+  GENERIC_EAST_BAY,
   isKnownCity,
   resolveCity,
 } from "@/lib/ui/cities";
@@ -37,8 +38,11 @@ describe("citiesForSelection", () => {
     expect(citiesForSelection("San Francisco")).toEqual(["San Francisco"]);
   });
 
-  it("fans the East Bay umbrella out to every East Bay city", () => {
-    expect(citiesForSelection("East Bay")).toEqual([...EAST_BAY_CITY_NAMES]);
+  it("fans the East Bay umbrella out to every East Bay city + generic bucket", () => {
+    expect(citiesForSelection("East Bay")).toEqual([
+      ...EAST_BAY_CITY_NAMES,
+      GENERIC_EAST_BAY,
+    ]);
   });
 
   it("falls back to the default city for unknown input", () => {

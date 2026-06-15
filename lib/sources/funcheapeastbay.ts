@@ -6,6 +6,7 @@ import {
   parsePacificWallString,
   type ParsedListingItem,
 } from "@/lib/funcheap";
+import { EAST_BAY_CITY_NAMES, GENERIC_EAST_BAY } from "@/lib/ui/cities";
 import type {
   Category,
   FetchResult,
@@ -16,57 +17,90 @@ import type {
   SourceError,
 } from "./types";
 
-// Date/cost/listing parsing is shared with the East Bay adapter via
-// `lib/funcheap.ts`; re-exported here so existing tests keep importing it.
-export { parseCost, parseListingHtml, parsePacificWallString };
-
 /**
- * Funcheap SF — Food/Eating-and-Drinking category — Tier-3 scraper.
+ * Funcheap East Bay — Tier-3 scraper, broad free/cheap coverage.
  *
- * Method: HTML listing parse only. Funcheap renders the full
- * Eating-and-Drinking archive as a single WordPress category page where each
- * event item carries a structured `.meta.archive-meta.date-time` block with
- * `data-event-date`/`data-event-date-end` attributes in Pacific local wall
- * time (`YYYY-MM-DD HH:MM`). The title, post URL, cost text, and venue label
- * are all in the same item DOM, so a single listing fetch yields every event
- * we need — no detail-page traversal required (satisfies B3: 1 HTTP request
- * per run).
+ * Funcheap has no `eastbay.` subdomain; the East Bay lives on the main site as
+ * an event-location archive:
+ *   https://sf.funcheap.com/category/event/event-locations/east-bay/
+ * Same WordPress `div.tanbox` markup as the SF food adapter, so listing/date/
+ * cost parsing is shared via `lib/funcheap.ts`.
  *
- * The task spec names the path `sf.funcheap.com/category/food`, but that
- * slug 404s. The site's actual category permalink for food is
- * `/category/event/event-types/eating-drinking/`, discovered via the
- * Funcheap category widget on its event index pages.
+ * Unlike the single-category food feed, this location feed mixes categories, so
+ * we keyword-classify each item into our taxonomy and SKIP what doesn't map.
+ * Funcheap groups the whole region as "East Bay" without a per-event city, so
+ * we detect a specific city from the title/venue when one is named and
+ * otherwise tag the generic "East Bay" bucket (which the "All East Bay"
+ * selector includes).
  *
- * Funcheap is an editorial aggregator ("Free & Cheap Things to Do in San
- * Francisco"), so verificationLevel is `community`. Cost text is human-edited
- * and uses "FREE" or a single `$X` figure; we map FREE → isFree: true and a
- * dollar figure → `priceMin = priceMax = X`. When the cost cell is missing or
- * unparseable we fall back to `priceMin = 0` (advertised as "free or cheap")
- * to satisfy D2 (non-null pricing OR isFree).
- *
- * Robots.txt: `Disallow: /search/`, `/*?s=`, `/*?search=`. The eating-and-
- * drinking archive permalink is not under any Disallow rule — scraping is
- * permitted (B2).
- *
- * Venue display name comes from the item's `<span>` tail in the meta block;
- * neighborhood is unknown per-row, so we leave it null and let the persister
- * resolve from venue master data when available.
+ * Editorial aggregator → verificationLevel "community". robots.txt only blocks
+ * /search/ and `?s=` query forms; the event-location archive is allowed.
  */
 
-const ID = "scrape:funcheapfood";
+const ID = "scrape:funcheapeastbay";
 const LISTING_URL =
-  "https://sf.funcheap.com/category/event/event-types/eating-drinking/";
+  "https://sf.funcheap.com/category/event/event-locations/east-bay/";
 const TZ = "America/Los_Angeles";
-const CATEGORY: Category = "food";
-
-// Hard cap on events emitted from one run. Funcheap renders ~30 entries
-// per archive page; this cap keeps memory bounded if the page ever
-// expands.
 const MAX_EVENTS = 100;
 
 /**
- * Lift one parsed item into a RawEvent. Returns null when required identity
- * fields (start time, URL, title) cannot be derived.
+ * Map a Funcheap listing's title/venue to our taxonomy, or null to SKIP.
+ * Order is deliberate: comedy and dance/DJ nights win over a generic "music"
+ * read, food over everything food-shaped.
+ */
+export function classifyCategory(
+  title: string,
+  venue: string | null,
+): Category | null {
+  const text = `${title} ${venue ?? ""}`.toLowerCase();
+
+  if (/comedy|stand-?up|improv|open mic.*comed/.test(text)) return "comedy";
+  if (
+    /\bdance\b|dancing|salsa|bachata|cumbia|ballroom|\brave\b|club night|disco|\bdj\b/.test(
+      text,
+    )
+  ) {
+    return "dancing";
+  }
+  if (
+    /\bfood\b|food truck|tasting|brunch|happy hour|\bwine\b|\bbeer\b|cocktail|culinary|night market|farmers? market|pop-?up/.test(
+      text,
+    )
+  ) {
+    return "food";
+  }
+  if (
+    /concert|live music|\bband\b|jazz|orchestra|symphony|acoustic|hip-?hop|songwriter|tribute|open mic/.test(
+      text,
+    )
+  ) {
+    return "music";
+  }
+  if (
+    /lecture|\btalk\b|\bauthor\b|book reading|\breading\b|seminar|workshop|panel|poetry|spoken word|history/.test(
+      text,
+    )
+  ) {
+    return "lectures";
+  }
+  return null;
+}
+
+/**
+ * Best-effort city from the title/venue text. Funcheap's feed is region-wide;
+ * when no specific East Bay city is named we fall back to the generic bucket.
+ */
+export function detectCity(title: string, venue: string | null): string {
+  const text = `${title} ${venue ?? ""}`;
+  for (const city of EAST_BAY_CITY_NAMES) {
+    if (new RegExp(`\\b${city}\\b`, "i").test(text)) return city;
+  }
+  return GENERIC_EAST_BAY;
+}
+
+/**
+ * Lift one parsed listing item into a RawEvent, or null when it lacks a usable
+ * start time or doesn't map to our taxonomy.
  */
 export function buildRawEvent(
   item: ParsedListingItem,
@@ -75,23 +109,16 @@ export function buildRawEvent(
   const startTimeUtc = parsePacificWallString(item.startLocal);
   if (!startTimeUtc) return null;
 
+  const category = classifyCategory(item.title, item.venueName);
+  if (!category) return null;
+
   const endTimeUtc = item.endLocal
     ? parsePacificWallString(item.endLocal)
     : null;
-
-  // Venue display: prefer the per-row span, else use the title as a soft
-  // fallback so canonical-fingerprint inputs are non-empty. Many Funcheap
-  // entries already embed the venue in the title.
   const venueName = item.venueName ?? item.title;
 
-  const pricing = parseCost(item.costText);
-
   return {
-    identity: {
-      source: ID,
-      externalId: item.postId,
-      sourceUrl: item.url,
-    },
+    identity: { source: ID, externalId: item.postId, sourceUrl: item.url },
     title: item.title,
     description: null,
     startTimeUtc,
@@ -99,14 +126,15 @@ export function buildRawEvent(
     timezone: TZ,
     venue: {
       name: venueName,
+      city: detectCity(item.title, item.venueName),
       neighborhood: null,
       address: null,
       lat: null,
       lng: null,
       timezone: TZ,
     },
-    primaryCategory: CATEGORY,
-    pricing,
+    primaryCategory: category,
+    pricing: parseCost(item.costText),
     recurrence: null,
     verificationLevel: "community",
     rawPayload: {
@@ -114,7 +142,6 @@ export function buildRawEvent(
       title: item.title,
       url: item.url,
       startLocal: item.startLocal,
-      endLocal: item.endLocal,
       costText: item.costText,
       venueName: item.venueName,
     },

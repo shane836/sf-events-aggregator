@@ -29,6 +29,13 @@ export const EAST_BAY_CITY_NAMES = [
   "Alameda",
 ] as const;
 
+/**
+ * Catch-all `venues.city` value for East Bay sources that don't expose a
+ * per-event city (e.g. Funcheap groups its whole East Bay feed together). It's
+ * part of the "All East Bay" umbrella but has no standalone selector entry.
+ */
+export const GENERIC_EAST_BAY = "East Bay";
+
 /** Every concrete city name we ingest/query (used by source adapters). */
 export const INGEST_CITY_NAMES: ReadonlyArray<string> = [
   "San Francisco",
@@ -40,7 +47,7 @@ export const CITY_SELECTIONS: ReadonlyArray<CitySelection> = [
   {
     value: "East Bay",
     label: "All East Bay",
-    cities: [...EAST_BAY_CITY_NAMES],
+    cities: [...EAST_BAY_CITY_NAMES, GENERIC_EAST_BAY],
     group: "East Bay",
   },
   { value: "Oakland", label: "Oakland", cities: ["Oakland"], group: "East Bay" },
