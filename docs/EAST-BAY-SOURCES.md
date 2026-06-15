@@ -8,12 +8,13 @@ recommended ingestion method against this repo's three source tiers — `api`
 (e.g. Ticketmaster Discovery), `ical` (e.g. UCSF), and `scrape` (JSON-LD /
 HTML, e.g. Cobb's, Funcheap) — plus robots.txt / ToS caveats.
 
-The city selector covers SF, an **All East Bay** umbrella, and every East Bay
-city (grouped by county); `venues.city` carries the metro per event. Events in
-cities we don't query directly still get tagged from their own address and
-surface under "All East Bay" — e.g. an Eventbrite listing in Pleasant Hill is
-tagged `city=Pleasant Hill`. Sources that can't resolve a specific city (the
-Funcheap feed) use a generic `East Bay` bucket.
+The city selector is two options — **SF** or **East Bay** — but the East Bay
+umbrella fans out to every Alameda + Contra Costa city (plus a generic bucket)
+under the hood, so `venues.city` still carries the precise metro per event.
+Events in cities we don't query directly still get tagged from their own
+address and surface under East Bay — e.g. an Eventbrite listing in Pleasant
+Hill is tagged `city=Pleasant Hill`. Sources that can't resolve a specific city
+(the Funcheap feed) use a generic `East Bay` bucket.
 
 > **Compliance first.** We honor robots.txt and site ToS (`lib/scrape.ts`
 > aborts on Cloudflare interstitials; see M3 rubric B6). Several sources below
@@ -32,6 +33,7 @@ Statuses verified as of June 2026 — re-check before implementing (venues close
 | `ticketmaster` | api | music, comedy | Now queries **Oakland** + SF and tags `venue.city`. Covers **Fox Theater**, **Paramount Theatre**, and every other Ticketmaster-ticketed Oakland venue. |
 | `ical:omca` | ical | food, lectures, music, dancing | **Oakland Museum of California** public-program feed (`/events/?ical=1`, robots-allowed). Maps "Friday Nights at OMCA / Off the Grid" food-truck nights → food; talks/performances → lectures/music. |
 | `scrape:eventbrite` | scrape | all 5 | **Eventbrite East Bay.** robots allows `/d/`. One request per city: read the discovery page's schema.org `ItemList` of ~20 Event nodes (no per-event fetch — Eventbrite 405-throttles bursts). City + geo tagged from each event's own address (discovery bleeds Bay-wide); off-metro/off-taxonomy events skipped. Covers Comedy Oakland, Ruckus Revival, The Sound Room, salsa socials. |
+| `scrape:freight` | scrape | music (+lectures/comedy) | **Freight & Salvage (Berkeley)** — fragile HTML scraper. No JSON-LD/iCal and the REST API omits datetimes, so it parses the server-rendered `span.dates` show cards on `/shows/`. Breaks if Freight restyles the cards (reports a parse error, ingests nothing). `city=Berkeley`. |
 | `scrape:funcheapeastbay` | scrape | all 5 | **Funcheap East Bay.** There is no `eastbay.funcheap.com`; the East Bay is the location archive `sf.funcheap.com/category/event/event-locations/east-bay/` (same `div.tanbox` markup as the SF food adapter, shared via `lib/funcheap.ts`). Mixed-category feed → keyword-classified, off-taxonomy skipped. City detected from title/venue when a city is named, else the generic **East Bay** bucket. Community-tier. |
 
 ---
@@ -56,9 +58,9 @@ it (Greek Theatre, UC Theatre — both Ticketmaster), `scrape:eventbrite` has a
 Berkeley discovery anchor, and `scrape:funcheapeastbay` detects Berkeley in its
 East Bay feed. A *dedicated venue* scraper was investigated and shelved — same
 wall as Oakland's first-party sites:
-- **Freight & Salvage** (`thefreight.org/shows/`, robots-OK) — WordPress, but
-  the listing carries **no Event JSON-LD** and detail links route to mixed
-  external systems; no iCal (`/events/?ical=1` → 403).
+- **Freight & Salvage** (`thefreight.org/shows/`, robots-OK) — ✅ now built as
+  `scrape:freight` (fragile). No Event JSON-LD/iCal and the REST API omits
+  datetimes, so it parses the server-rendered `span.dates` show cards.
 - **UC Theatre / Greek Theatre** — Ticketmaster, already covered.
 - **Ashkenaz** — Squarespace + VenuePilot, no iCal/JSON-LD on the calendar.
 - **UC Berkeley** (`events.berkeley.edu`) and **Cal Performances** — no working

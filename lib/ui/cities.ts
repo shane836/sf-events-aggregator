@@ -101,31 +101,17 @@ export const TICKETMASTER_QUERY_CITIES: ReadonlyArray<string> = [
 
 export const DEFAULT_CITY = "San Francisco";
 
-const EAST_BAY_UMBRELLA: CitySelection = {
-  value: "East Bay",
-  label: "All East Bay",
-  cities: [...EAST_BAY_CITY_NAMES, GENERIC_EAST_BAY],
-};
-
+// The selector is intentionally two options: SF, or the whole East Bay. The
+// East Bay umbrella still fans out to every East Bay city (plus the generic
+// bucket) under the hood, so per-event city tagging stays meaningful even
+// though we don't expose a picker per city.
 export const CITY_SELECTIONS: ReadonlyArray<CitySelection> = [
   { value: "San Francisco", label: "SF", cities: ["San Francisco"] },
-  EAST_BAY_UMBRELLA,
-  ...ALAMEDA_COUNTY_CITIES.map(
-    (c): CitySelection => ({
-      value: c,
-      label: c,
-      cities: [c],
-      group: "Alameda County",
-    }),
-  ),
-  ...CONTRA_COSTA_COUNTY_CITIES.map(
-    (c): CitySelection => ({
-      value: c,
-      label: c,
-      cities: [c],
-      group: "Contra Costa County",
-    }),
-  ),
+  {
+    value: "East Bay",
+    label: "East Bay",
+    cities: [...EAST_BAY_CITY_NAMES, GENERIC_EAST_BAY],
+  },
 ];
 
 function findSelection(value: string | null | undefined): CitySelection | null {

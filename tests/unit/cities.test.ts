@@ -17,27 +17,29 @@ describe("resolveCity", () => {
     expect(resolveCity("Atlantis")).toBe(DEFAULT_CITY);
   });
 
-  it("matches known selections case-insensitively and canonicalizes", () => {
-    expect(resolveCity("oakland")).toBe("Oakland");
-    expect(resolveCity("BERKELEY")).toBe("Berkeley");
-    expect(resolveCity("east bay")).toBe("East Bay");
+  it("recognizes the two selections case-insensitively", () => {
     expect(resolveCity("san francisco")).toBe("San Francisco");
-    // Contra Costa County cities are covered too.
-    expect(resolveCity("walnut creek")).toBe("Walnut Creek");
-    expect(resolveCity("Richmond")).toBe("Richmond");
+    expect(resolveCity("east bay")).toBe("East Bay");
+    expect(resolveCity("EAST BAY")).toBe("East Bay");
   });
 
-  it("isKnownCity gates on the canonical token", () => {
+  it("treats individual cities as non-selections (folded into East Bay)", () => {
+    // The selector is SF / East Bay only — a specific-city token isn't a
+    // selection, so it falls back to the default.
+    expect(resolveCity("Oakland")).toBe(DEFAULT_CITY);
+    expect(resolveCity("Berkeley")).toBe(DEFAULT_CITY);
+  });
+
+  it("isKnownCity gates on the canonical selection token", () => {
     expect(isKnownCity("East Bay")).toBe(true);
-    expect(isKnownCity("Emeryville")).toBe(true);
-    expect(isKnownCity("oakland")).toBe(false); // canonical only
-    expect(isKnownCity("San Jose")).toBe(false); // out of region
+    expect(isKnownCity("San Francisco")).toBe(true);
+    expect(isKnownCity("Oakland")).toBe(false);
+    expect(isKnownCity("east bay")).toBe(false); // canonical only
   });
 });
 
 describe("citiesForSelection", () => {
-  it("maps a single-city token to one venue city", () => {
-    expect(citiesForSelection("Oakland")).toEqual(["Oakland"]);
+  it("maps SF to one venue city", () => {
     expect(citiesForSelection("San Francisco")).toEqual(["San Francisco"]);
   });
 
@@ -48,15 +50,22 @@ describe("citiesForSelection", () => {
     ]);
   });
 
+  it("includes Alameda + Contra Costa cities in the umbrella", () => {
+    const cities = citiesForSelection("East Bay");
+    expect(cities).toContain("Oakland"); // Alameda County
+    expect(cities).toContain("Berkeley");
+    expect(cities).toContain("Walnut Creek"); // Contra Costa County
+    expect(cities).toContain("Richmond");
+  });
+
   it("falls back to the default city for unknown input", () => {
     expect(citiesForSelection("nope")).toEqual(["San Francisco"]);
   });
 });
 
 describe("filters — city round-trip", () => {
-  it("parses ?city= into a resolved token, defaulting to SF", () => {
+  it("parses ?city= into a resolved selection, defaulting to SF", () => {
     expect(parseFilters({}).city).toBe(DEFAULT_CITY);
-    expect(parseFilters({ city: "Berkeley" }).city).toBe("Berkeley");
     expect(parseFilters({ city: "East Bay" }).city).toBe("East Bay");
     expect(parseFilters({ city: "nope" }).city).toBe(DEFAULT_CITY);
   });

@@ -33,14 +33,6 @@ export function CitySelector() {
     });
   };
 
-  // Ungrouped selections (SF, All East Bay) render first; the rest are grouped
-  // into <optgroup>s by their `group` label, in first-seen order.
-  const standalone = CITY_SELECTIONS.filter((c) => !c.group);
-  const groups: string[] = [];
-  for (const c of CITY_SELECTIONS) {
-    if (c.group && !groups.includes(c.group)) groups.push(c.group);
-  }
-
   return (
     <div className="flex items-center gap-2" aria-busy={isPending}>
       <label
@@ -56,19 +48,10 @@ export function CitySelector() {
         onChange={(e) => onChange(e.target.value)}
         className="min-h-[36px] rounded-md border border-zinc-700 bg-zinc-900 px-2 py-1 font-mono text-xs uppercase tracking-wide text-zinc-100 hover:border-zinc-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
       >
-        {standalone.map((c) => (
+        {CITY_SELECTIONS.map((c) => (
           <option key={c.value} value={c.value}>
             {c.label}
           </option>
-        ))}
-        {groups.map((g) => (
-          <optgroup key={g} label={g}>
-            {CITY_SELECTIONS.filter((c) => c.group === g).map((c) => (
-              <option key={c.value} value={c.value}>
-                {c.label}
-              </option>
-            ))}
-          </optgroup>
         ))}
       </select>
     </div>
