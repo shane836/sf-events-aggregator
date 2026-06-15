@@ -9,6 +9,7 @@ import type { Category, PriceInfo, VerificationLevel } from "@/lib/sources/types
 export type ApiVenue = {
   id: string;
   name: string;
+  city: string;
   neighborhood: string | null;
   address: string | null;
   lat: number | null;
@@ -43,6 +44,7 @@ export type EventsQuery = {
   categories?: Category[];
   from?: string;
   to?: string;
+  city?: string;
   neighborhood?: string;
   limit?: number;
 };
@@ -76,6 +78,7 @@ export async function fetchEvents(q: EventsQuery = {}): Promise<ApiResponse> {
   for (const c of q.categories ?? []) sp.append("category", c);
   if (q.from) sp.set("from", q.from);
   if (q.to) sp.set("to", q.to);
+  if (q.city) sp.set("city", q.city);
   if (q.neighborhood) sp.set("neighborhood", q.neighborhood);
   if (q.limit) sp.set("limit", String(q.limit));
 

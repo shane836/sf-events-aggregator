@@ -21,9 +21,13 @@ import type {
  * `TICKETMASTER_CONSUMER_KEY` env var). The Discovery API does not require the
  * consumer secret.
  *
+ * Cities: queries each metro in CITIES (San Francisco, Oakland) via the `city`
+ * param and tags every result with `venue.city` (from the API venue's city
+ * name) so the calendar's city selector can filter it.
+ *
  * Pagination: `size=200` per page, walk `page=0..MAX_PAGES-1` and stop when a
  * page returns zero events. Free tier allows 5000 calls/day; one ingest run
- * uses at most `MAX_PAGES * classifications.length` calls.
+ * uses at most `MAX_PAGES * classifications.length * cities.length` calls.
  *
  * Category mapping (segment / genre → our 5-cat taxonomy):
  *   - segment "Music"                                  → "music"
@@ -41,6 +45,9 @@ const VERIFICATION: VerificationLevel = "trusted_partner";
 const MAX_PAGES = 5; // 5 * 200 = 1000 events per classification, plenty for a 30-day horizon
 const PAGE_SIZE = 200;
 const CLASSIFICATIONS = ["Music", "Comedy"] as const;
+// Metros to pull, queried as the Discovery API `city` param. Each result is
+// tagged with `venue.city` so the calendar's city selector can filter it.
+const CITIES = ["San Francisco", "Oakland"] as const;
 
 const USER_AGENT =
   "sf-events-aggregator/1.0 (+https://github.com/shane836/sf-events-aggregator)";
@@ -170,10 +177,26 @@ function buildPricing(priceRanges: unknown): PriceInfo {
  * Returns null when required fields are missing, the classification doesn't
  * map to music/comedy, or the event is past-dated (D6).
  */
+/** Canonical city for `venue.city`. Prefer the API's venue city name when it
+ * matches a metro we track; otherwise fall back to the queried city. */
+function resolveVenueCity(
+  apiCityName: string | null,
+  fallback: string,
+): string {
+  if (apiCityName) {
+    const match = CITIES.find(
+      (c) => c.toLowerCase() === apiCityName.toLowerCase(),
+    );
+    if (match) return match;
+  }
+  return fallback;
+}
+
 export function parseEvent(
   ev: Record<string, unknown>,
   fetchedAt: Date,
   nowMs: number = Date.now(),
+  cityFallback: string = "San Francisco",
 ): RawEvent | null {
   const id = getString(ev, "id");
   const name = getString(ev, "name");
@@ -207,11 +230,16 @@ export function parseEvent(
   const venues = asArray(asObject(ev._embedded)?.venues);
   const venueObj = asObject(venues[0]);
   const venueName = getString(venueObj, "name") ?? "Unknown venue";
+  const venueCityObj = asObject(venueObj?.city);
   const address = buildAddress(
     asObject(venueObj?.address),
-    asObject(venueObj?.city),
+    venueCityObj,
     asObject(venueObj?.state),
     getString(venueObj, "postalCode"),
+  );
+  const venueCity = resolveVenueCity(
+    getString(venueCityObj, "name"),
+    cityFallback,
   );
   const location = asObject(venueObj?.location);
   const lat = getNumber(location, "latitude");
@@ -233,6 +261,7 @@ export function parseEvent(
     venue: {
       externalVenueId: getString(venueObj, "id"),
       name: venueName,
+      city: venueCity,
       neighborhood: inferNeighborhood(venueName),
       address,
       lat,
@@ -256,6 +285,7 @@ export function parseEvent(
 async function fetchPage(
   apiKey: string,
   classification: string,
+  city: string,
   page: number,
 ): Promise<{
   events: Record<string, unknown>[];
@@ -263,7 +293,7 @@ async function fetchPage(
 }> {
   const url = new URL(API_BASE);
   url.searchParams.set("apikey", apiKey);
-  url.searchParams.set("city", "San Francisco");
+  url.searchParams.set("city", city);
   url.searchParams.set("stateCode", "CA");
   url.searchParams.set("size", String(PAGE_SIZE));
   url.searchParams.set("page", String(page));
@@ -284,7 +314,7 @@ async function fetchPage(
       error: {
         source: ID,
         stage: "fetch",
-        message: `network error (${classification} p${page}): ${
+        message: `network error (${city} ${classification} p${page}): ${
           err instanceof Error ? err.message : String(err)
         }`,
         retryable: true,
@@ -299,7 +329,7 @@ async function fetchPage(
       error: {
         source: ID,
         stage: "fetch",
-        message: `HTTP ${res.status} (${classification} p${page})`,
+        message: `HTTP ${res.status} (${city} ${classification} p${page})`,
         retryable: res.status >= 500 || res.status === 429,
         httpStatus: res.status,
         rateLimited: res.status === 429,
@@ -317,7 +347,7 @@ async function fetchPage(
       error: {
         source: ID,
         stage: "parse",
-        message: `invalid JSON (${classification} p${page}): ${
+        message: `invalid JSON (${city} ${classification} p${page}): ${
           err instanceof Error ? err.message : String(err)
         }`,
         retryable: false,
@@ -359,42 +389,46 @@ const adapter: SourceAdapter = {
 
     const seenIds = new Set<string>();
 
-    for (const classification of CLASSIFICATIONS) {
-      for (let page = 0; page < MAX_PAGES; page++) {
-        const { events: rawEvents, error } = await fetchPage(
-          apiKey,
-          classification,
-          page,
-        );
-        if (error) {
-          errors.push(error);
-          // Stop paginating this classification on error, but continue with the
-          // next classification — partial coverage is better than nothing.
-          break;
-        }
-        if (rawEvents.length === 0) break;
-
-        for (const rawEv of rawEvents) {
-          try {
-            const parsed = parseEvent(rawEv, fetchedAt, nowMs);
-            if (!parsed) continue;
-            // De-dupe within a single run (an event listed under both Music and
-            // a sub-classification could appear twice).
-            if (seenIds.has(parsed.identity.externalId)) continue;
-            seenIds.add(parsed.identity.externalId);
-            events.push(parsed);
-          } catch (err) {
-            errors.push({
-              source: ID,
-              stage: "parse",
-              message: err instanceof Error ? err.message : String(err),
-              retryable: false,
-              occurredAt: new Date(),
-            });
+    for (const city of CITIES) {
+      for (const classification of CLASSIFICATIONS) {
+        for (let page = 0; page < MAX_PAGES; page++) {
+          const { events: rawEvents, error } = await fetchPage(
+            apiKey,
+            classification,
+            city,
+            page,
+          );
+          if (error) {
+            errors.push(error);
+            // Stop paginating this (city, classification) on error, but
+            // continue with the next — partial coverage beats nothing.
+            break;
           }
-        }
+          if (rawEvents.length === 0) break;
 
-        if (rawEvents.length < PAGE_SIZE) break; // last page
+          for (const rawEv of rawEvents) {
+            try {
+              const parsed = parseEvent(rawEv, fetchedAt, nowMs, city);
+              if (!parsed) continue;
+              // De-dupe within a single run (an event listed under both Music
+              // and a sub-classification — or under both city queries — could
+              // appear twice).
+              if (seenIds.has(parsed.identity.externalId)) continue;
+              seenIds.add(parsed.identity.externalId);
+              events.push(parsed);
+            } catch (err) {
+              errors.push({
+                source: ID,
+                stage: "parse",
+                message: err instanceof Error ? err.message : String(err),
+                retryable: false,
+                occurredAt: new Date(),
+              });
+            }
+          }
+
+          if (rawEvents.length < PAGE_SIZE) break; // last page
+        }
       }
     }
 

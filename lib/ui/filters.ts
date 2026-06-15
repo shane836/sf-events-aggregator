@@ -1,4 +1,5 @@
 import type { Category } from "@/lib/sources/types";
+import { DEFAULT_CITY, resolveCity } from "@/lib/ui/cities";
 
 /**
  * Filter state derived from URL search params. The URL is the single source
@@ -31,6 +32,8 @@ export type FilterState = {
   /** ISO date YYYY-MM-DD (custom only). */
   from: string | null;
   to: string | null;
+  /** Selected metro. Always resolved to a known city (defaults to SF). */
+  city: string;
   neighborhood: string | null;
   /**
    * Calendar view mode. Separate axis from `preset`: when `view` is set the
@@ -49,11 +52,12 @@ export function parseFilters(
   const preset = readPreset(searchParams.preset);
   const from = readSingle(searchParams.from);
   const to = readSingle(searchParams.to);
+  const city = resolveCity(readSingle(searchParams.city));
   const neighborhood = readSingle(searchParams.neighborhood);
   const view = readView(searchParams.view);
   const date = readDateKey(searchParams.date);
 
-  return { categories, preset, from, to, neighborhood, view, date };
+  return { categories, preset, from, to, city, neighborhood, view, date };
 }
 
 function readView(v: string | string[] | undefined): ViewMode {
@@ -210,6 +214,7 @@ export function buildSearchString(state: FilterState): string {
     if (state.from) sp.set("from", state.from);
     if (state.to) sp.set("to", state.to);
   }
+  if (state.city && state.city !== DEFAULT_CITY) sp.set("city", state.city);
   if (state.neighborhood) sp.set("neighborhood", state.neighborhood);
   if (state.view !== "month") sp.set("view", state.view);
   if (state.date) sp.set("date", state.date);

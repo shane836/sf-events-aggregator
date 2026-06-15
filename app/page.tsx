@@ -62,6 +62,7 @@ export default async function Home({
       categories: filters.categories.length ? filters.categories : undefined,
       from: range.from,
       to: range.to,
+      city: filters.city,
       neighborhood: filters.neighborhood ?? undefined,
       limit: 500,
     }),
@@ -69,6 +70,7 @@ export default async function Home({
       categories: filters.categories.length ? filters.categories : undefined,
       from: feedWindow.from,
       to: feedWindow.to,
+      city: filters.city,
       neighborhood: filters.neighborhood ?? undefined,
       limit: FEED_MAX_ROWS,
     }),
@@ -82,6 +84,7 @@ export default async function Home({
       categories: filters.categories.length ? filters.categories : undefined,
       from: range.from,
       to: range.to,
+      city: filters.city,
       limit: 500,
     });
     neighborhoodOptions = distinctNeighborhoods(wide.events);

@@ -39,6 +39,8 @@ async function upsertVenue(v: VenueCandidate): Promise<string> {
     .values({
       normalizedName: normalized,
       name: v.name,
+      // Default to the original single-city scope when an adapter omits city.
+      city: v.city ?? "San Francisco",
       neighborhood: v.neighborhood ?? null,
       address: v.address ?? null,
       lat: v.lat != null ? v.lat.toString() : null,
@@ -49,6 +51,7 @@ async function upsertVenue(v: VenueCandidate): Promise<string> {
       target: venues.normalizedName,
       // COALESCE pattern: enrich, never overwrite with null
       set: {
+        city: sql`coalesce(excluded.city, ${venues.city})`,
         neighborhood: sql`coalesce(excluded.neighborhood, ${venues.neighborhood})`,
         address: sql`coalesce(excluded.address, ${venues.address})`,
         lat: sql`coalesce(excluded.lat, ${venues.lat})`,

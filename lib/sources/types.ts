@@ -34,6 +34,12 @@ export type ExternalIdentity = {
 export type VenueCandidate = {
   externalVenueId?: string | null;
   name: string;
+  /**
+   * Metro/city the venue sits in, e.g. "San Francisco" | "Oakland". Backs the
+   * city selector. Adapters that don't set it fall back to "San Francisco" at
+   * the persist layer (the original single-city scope).
+   */
+  city?: string | null;
   address?: string | null;
   neighborhood?: string | null;
   lat?: number | null;

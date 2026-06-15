@@ -16,6 +16,7 @@ import type { Category, PriceInfo, VerificationLevel } from "@/lib/sources/types
  *   - category       repeatable; one of music|comedy|lectures|dancing|food
  *   - from           ISO date/datetime; default = now()
  *   - to             ISO date/datetime; default = now() + 30 days
+ *   - city           repeatable; case-insensitive match against venues.city
  *   - neighborhood   repeatable; case-insensitive match against venues.neighborhood
  *   - limit          integer, 1..500, default 200
  *   - offset         integer, >= 0, default 0
@@ -46,6 +47,7 @@ const DEFAULT_WINDOW_DAYS = 30;
 
 type ParsedParams = {
   categories: Category[] | null;
+  cities: string[] | null;
   neighborhoods: string[] | null;
   from: Date;
   to: Date;
@@ -73,6 +75,19 @@ function parseParams(
       };
     }
     categories = Array.from(new Set(rawCategories)) as Category[];
+  }
+
+  // ---- city ----
+  const rawCities = searchParams.getAll("city");
+  let cities: string[] | null = null;
+  if (rawCities.length > 0) {
+    const trimmed = rawCities
+      .map((c) => c.trim())
+      .filter((c) => c.length > 0);
+    if (trimmed.length === 0) {
+      return { code: 400, message: "city must not be empty" };
+    }
+    cities = Array.from(new Set(trimmed));
   }
 
   // ---- neighborhood ----
@@ -135,7 +150,7 @@ function parseParams(
     offset = n;
   }
 
-  return { categories, neighborhoods, from, to, limit, offset };
+  return { categories, cities, neighborhoods, from, to, limit, offset };
 }
 
 type Row = {
@@ -155,6 +170,7 @@ type Row = {
   verificationLevel: string;
   venueId: string;
   venueName: string;
+  venueCity: string;
   venueNeighborhood: string | null;
   venueAddress: string | null;
   venueLat: string | null;
@@ -178,6 +194,7 @@ function toResponseEvent(r: Row) {
     venue: {
       id: r.venueId,
       name: r.venueName,
+      city: r.venueCity,
       neighborhood: r.venueNeighborhood,
       address: r.venueAddress,
       lat: r.venueLat != null ? Number(r.venueLat) : null,
@@ -199,9 +216,9 @@ export async function GET(request: NextRequest) {
     return Response.json({ error: parsed.message }, { status: 400 });
   }
 
-  const { categories, neighborhoods, from, to, limit, offset } = parsed;
+  const { categories, cities, neighborhoods, from, to, limit, offset } = parsed;
 
-  // Build filter clauses. Date range is always applied; category and
+  // Build filter clauses. Date range is always applied; category, city, and
   // neighborhood are OR-within-field, AND-across-fields.
   const conditions = [
     gte(events.startTimeUtc, from),
@@ -210,6 +227,17 @@ export async function GET(request: NextRequest) {
 
   if (categories != null) {
     conditions.push(inArray(events.category, categories));
+  }
+
+  if (cities != null) {
+    // Case-insensitive match against venues.city.
+    const lowered = cities.map((c) => c.toLowerCase());
+    conditions.push(
+      sql`lower(${venues.city}) in (${sql.join(
+        lowered.map((c) => sql`${c}`),
+        sql`, `,
+      )})`,
+    );
   }
 
   if (neighborhoods != null) {
@@ -252,6 +280,7 @@ export async function GET(request: NextRequest) {
           verificationLevel: events.verificationLevel,
           venueId: venues.id,
           venueName: venues.name,
+          venueCity: venues.city,
           venueNeighborhood: venues.neighborhood,
           venueAddress: venues.address,
           venueLat: venues.lat,

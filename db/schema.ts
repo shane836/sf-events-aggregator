@@ -26,6 +26,10 @@ export const venues = pgTable(
     id: uuid("id").defaultRandom().primaryKey(),
     normalizedName: text("normalized_name").notNull(),
     name: text("name").notNull(),
+    // Metro/city the venue belongs to (e.g. "San Francisco", "Oakland"). Backs
+    // the city selector. Defaults to San Francisco — the original single-city
+    // scope — so existing rows backfill correctly when the column is added.
+    city: text("city").notNull().default("San Francisco"),
     neighborhood: text("neighborhood"),
     address: text("address"),
     lat: numeric("lat", { precision: 9, scale: 6 }),
@@ -37,6 +41,7 @@ export const venues = pgTable(
   (t) => [
     uniqueIndex("venues_normalized_name_idx").on(t.normalizedName),
     index("venues_neighborhood_idx").on(t.neighborhood),
+    index("venues_city_idx").on(t.city),
   ],
 );
 
