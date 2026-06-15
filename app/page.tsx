@@ -7,6 +7,7 @@ import {
   todayInPT,
   viewToRange,
 } from "@/lib/ui/filters";
+import { citiesForSelection } from "@/lib/ui/cities";
 import { viewLabel } from "@/lib/ui/dates";
 import { AgendaList } from "./components/agenda-list";
 import { CalendarGrid } from "./components/calendar-grid";
@@ -52,6 +53,10 @@ export default async function Home({
     ? viewToRange(filters.view, anchorDate)
     : presetToRange(filters.preset, new Date(), filters.from, filters.to);
 
+  // The city selector token (e.g. "East Bay") fans out to concrete venue
+  // city names the API filters on.
+  const cities = citiesForSelection(filters.city);
+
   // Calendar fetch — events for the current view's window.
   // Feed fetch — always next FEED_LOOKAHEAD_DAYS regardless of view (the feed
   // is a separate axis from the calendar). Both calls hit /api/events; the
@@ -62,7 +67,7 @@ export default async function Home({
       categories: filters.categories.length ? filters.categories : undefined,
       from: range.from,
       to: range.to,
-      city: filters.city,
+      cities,
       neighborhood: filters.neighborhood ?? undefined,
       limit: 500,
     }),
@@ -70,7 +75,7 @@ export default async function Home({
       categories: filters.categories.length ? filters.categories : undefined,
       from: feedWindow.from,
       to: feedWindow.to,
-      city: filters.city,
+      cities,
       neighborhood: filters.neighborhood ?? undefined,
       limit: FEED_MAX_ROWS,
     }),
@@ -84,7 +89,7 @@ export default async function Home({
       categories: filters.categories.length ? filters.categories : undefined,
       from: range.from,
       to: range.to,
-      city: filters.city,
+      cities,
       limit: 500,
     });
     neighborhoodOptions = distinctNeighborhoods(wide.events);

@@ -44,7 +44,8 @@ export type EventsQuery = {
   categories?: Category[];
   from?: string;
   to?: string;
-  city?: string;
+  /** Concrete `venues.city` values; OR-matched. */
+  cities?: string[];
   neighborhood?: string;
   limit?: number;
 };
@@ -78,7 +79,7 @@ export async function fetchEvents(q: EventsQuery = {}): Promise<ApiResponse> {
   for (const c of q.categories ?? []) sp.append("category", c);
   if (q.from) sp.set("from", q.from);
   if (q.to) sp.set("to", q.to);
-  if (q.city) sp.set("city", q.city);
+  for (const c of q.cities ?? []) sp.append("city", c);
   if (q.neighborhood) sp.set("neighborhood", q.neighborhood);
   if (q.limit) sp.set("limit", String(q.limit));
 

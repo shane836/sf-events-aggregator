@@ -1,15 +1,19 @@
-# Oakland Event Sources
+# East Bay Event Sources
 
-Research backing the Oakland expansion (verified June 2026). Each entry notes
-the recommended ingestion method against this repo's three source tiers —
-`api` (e.g. Ticketmaster Discovery), `ical` (e.g. UCSF), and `scrape`
-(JSON-LD / HTML, e.g. Cobb's, Funcheap) — plus robots.txt / ToS caveats.
+Research backing the East Bay expansion — **Oakland, Berkeley, Emeryville,
+Alameda** (verified June 2026). Each entry notes the recommended ingestion
+method against this repo's three source tiers — `api` (e.g. Ticketmaster
+Discovery), `ical` (e.g. UCSF), and `scrape` (JSON-LD / HTML, e.g. Cobb's,
+Funcheap) — plus robots.txt / ToS caveats.
+
+The city selector covers SF plus an **All East Bay** umbrella and the
+individual East Bay cities; `venues.city` carries the metro per event.
 
 > **Compliance first.** We honor robots.txt and site ToS (`lib/scrape.ts`
-> aborts on Cloudflare interstitials; see M3 rubric B6). Several Oakland
-> sources below either block our crawler UA or sit behind anti-bot walls —
-> those are flagged **DO NOT SCRAPE** and should be reached via an allowed
-> backend (Ticketmaster/Eventbrite API) or skipped.
+> aborts on Cloudflare interstitials; see M3 rubric B6). Several sources below
+> either block our crawler UA or sit behind anti-bot walls — those are flagged
+> **DO NOT SCRAPE** and should be reached via an allowed backend
+> (Ticketmaster/Eventbrite API) or skipped.
 
 Statuses verified as of June 2026 — re-check before implementing (venues close).
 
@@ -38,10 +42,19 @@ Statuses verified as of June 2026 — re-check before implementing (venues close
 | **The Sound Room** (jazz, nonprofit) | 3022 Broadway | Eventbrite | Squarespace; per-event `.ics` links but **no whole-calendar feed**. Best reached via Eventbrite. |
 | **Continental Club** | 1658 12th St (West Oakland) | unknown | WordPress; mostly private events. Low public-event volume. |
 
-**Closed / out of scope (do not ingest):** Starline Social Club (closed Jan 1
-2026), The Octopus Literary Salon (closed), Golden Bull (closed Apr 2026),
-1-2-3-4 Go! Records (not booking shows). **The Greek Theatre is in Berkeley,
-not Oakland** — exclude or tag `city=Berkeley`.
+**Now in scope (Berkeley / Emeryville):**
+- **The Greek Theatre** (Berkeley, UC campus) — Ticketmaster-ticketed, so
+  ✅ covered by `ticketmaster` (tagged `city=Berkeley`).
+- **UC Theatre**, **Cornerstone Berkeley**, **924 Gilman** (all-ages punk),
+  **Freight & Salvage** (folk, has a clean events calendar) — Berkeley music
+  venues worth bespoke adapters; Freight & Salvage and UC Theatre are the
+  highest-value next targets.
+- **Public Market Emeryville** (5959 Shellmound St) — WordPress events page
+  with recurring "Market Beats" live music; worth a `scrape` adapter.
+
+**Closed (do not ingest):** Starline Social Club (closed Jan 1 2026), The
+Octopus Literary Salon (closed), Golden Bull (closed Apr 2026), 1-2-3-4 Go!
+Records (not booking shows).
 
 ## Comedy
 
@@ -50,7 +63,8 @@ not Oakland** — exclude or tag `city=Berkeley`.
 | **Comedy Oakland** (comedyoakland.com) | Eventbrite | Longest-running Bay Area stand-up room; hosts at Elbo Room (311 Broadway) & Quinn's Lighthouse (1951 Embarcadero). ⚠️ **robots.txt disallows all non-Google bots** — do NOT scrape the site; pull via the **Eventbrite API** instead. |
 | **The Ruckus Revival** (ex-Tourettes Without Regrets) | Eventbrite | 2nd Thursdays at Oakland Metro Operahouse (522 2nd St). Squarespace site; reach via Eventbrite. |
 
-> **Made Up Theatre is in Fremont, not Oakland** — exclude or tag `city=Fremont`.
+> **Made Up Theatre is in Fremont** (outside our current East Bay city list) —
+> exclude for now or add Fremont to the selector if you want Tri-City coverage.
 
 ## Dancing / social dance
 
@@ -60,8 +74,11 @@ not Oakland** — exclude or tag `city=Berkeley`.
 | **SalsaCrazy** @ Just Dance Ballroom | — | Second operator at the same venue. |
 | **Eventbrite — Oakland salsa** (`/d/ca--oakland/salsa/`) | Eventbrite API | Aggregator path; best structured option for social dance. |
 
-> **Ashkenaz (Berkeley)** is very active (VenuePilot ticketing) but out of an
-> Oakland-only scope. New Karibbean City appears **closed** (Yelp, Apr 2026).
+> **Ashkenaz** (Berkeley, 1317 San Pablo Ave) is very active — world/folk
+> dance, Bachata Nightz, Cajun/zydeco, swing. **Now in scope**; VenuePilot
+> ticketing (`tickets.venuepilot.com`) exposes structured pages — a good
+> `scrape`/`api` target for `city=Berkeley`. New Karibbean City appears
+> **closed** (Yelp, Apr 2026).
 
 ## Food
 
@@ -74,7 +91,8 @@ not Oakland** — exclude or tag `city=Berkeley`.
 | **Rockridge Market Hall** (5655 College Ave) | occasional | YOOtheme/WP | Tastings & fêtes; no structured feed confirmed. |
 
 > **Eat Real Festival** has been on hiatus since 2019 — not an active source.
-> **Public Market Emeryville** is in Emeryville, not Oakland.
+> **Public Market Emeryville** (WordPress events page; "Market Beats" live
+> music 2nd Fridays) is **now in scope** as `city=Emeryville`.
 
 ## Aggregators
 

@@ -2,15 +2,16 @@
 
 import { useRouter, useSearchParams } from "next/navigation";
 import { useTransition } from "react";
-import { CITIES, DEFAULT_CITY, resolveCity } from "@/lib/ui/cities";
+import { CITY_SELECTIONS, DEFAULT_CITY, resolveCity } from "@/lib/ui/cities";
 
 /**
  * "Choose city" dropdown — the top-left header control. Reads/writes the
  * `?city=` URL param (the single source of truth, like the rest of the
  * filters) so the selection survives refresh and is shareable.
  *
- * Switching city clears `neighborhood` (neighborhood lists are city-specific)
- * and the `event` modal param, but preserves category/date/view state.
+ * Covers San Francisco and the East Bay (an "All East Bay" umbrella plus
+ * individual cities). Switching clears `neighborhood` (neighborhood lists are
+ * city-specific) and the `event` modal param, but preserves category/date/view.
  */
 export function CitySelector() {
   const router = useRouter();
@@ -32,6 +33,9 @@ export function CitySelector() {
     });
   };
 
+  const standalone = CITY_SELECTIONS.filter((c) => !c.group);
+  const eastBay = CITY_SELECTIONS.filter((c) => c.group === "East Bay");
+
   return (
     <div className="flex items-center gap-2" aria-busy={isPending}>
       <label
@@ -47,11 +51,18 @@ export function CitySelector() {
         onChange={(e) => onChange(e.target.value)}
         className="min-h-[36px] rounded-md border border-zinc-700 bg-zinc-900 px-2 py-1 font-mono text-xs uppercase tracking-wide text-zinc-100 hover:border-zinc-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
       >
-        {CITIES.map((c) => (
+        {standalone.map((c) => (
           <option key={c.value} value={c.value}>
             {c.label}
           </option>
         ))}
+        <optgroup label="East Bay">
+          {eastBay.map((c) => (
+            <option key={c.value} value={c.value}>
+              {c.label}
+            </option>
+          ))}
+        </optgroup>
       </select>
     </div>
   );

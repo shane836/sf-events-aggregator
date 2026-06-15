@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_CITY, isKnownCity, resolveCity } from "@/lib/ui/cities";
+import {
+  citiesForSelection,
+  DEFAULT_CITY,
+  EAST_BAY_CITY_NAMES,
+  isKnownCity,
+  resolveCity,
+} from "@/lib/ui/cities";
 import { buildSearchString, parseFilters } from "@/lib/ui/filters";
 
 describe("resolveCity", () => {
@@ -10,23 +16,41 @@ describe("resolveCity", () => {
     expect(resolveCity("Atlantis")).toBe(DEFAULT_CITY);
   });
 
-  it("matches known cities case-insensitively and canonicalizes", () => {
+  it("matches known selections case-insensitively and canonicalizes", () => {
     expect(resolveCity("oakland")).toBe("Oakland");
-    expect(resolveCity("OAKLAND")).toBe("Oakland");
+    expect(resolveCity("BERKELEY")).toBe("Berkeley");
+    expect(resolveCity("east bay")).toBe("East Bay");
     expect(resolveCity("san francisco")).toBe("San Francisco");
   });
 
-  it("isKnownCity gates on the canonical value", () => {
-    expect(isKnownCity("Oakland")).toBe(true);
+  it("isKnownCity gates on the canonical token", () => {
+    expect(isKnownCity("East Bay")).toBe(true);
+    expect(isKnownCity("Emeryville")).toBe(true);
     expect(isKnownCity("oakland")).toBe(false); // canonical only
-    expect(isKnownCity("Berkeley")).toBe(false);
+    expect(isKnownCity("Fremont")).toBe(false);
+  });
+});
+
+describe("citiesForSelection", () => {
+  it("maps a single-city token to one venue city", () => {
+    expect(citiesForSelection("Oakland")).toEqual(["Oakland"]);
+    expect(citiesForSelection("San Francisco")).toEqual(["San Francisco"]);
+  });
+
+  it("fans the East Bay umbrella out to every East Bay city", () => {
+    expect(citiesForSelection("East Bay")).toEqual([...EAST_BAY_CITY_NAMES]);
+  });
+
+  it("falls back to the default city for unknown input", () => {
+    expect(citiesForSelection("nope")).toEqual(["San Francisco"]);
   });
 });
 
 describe("filters — city round-trip", () => {
-  it("parses ?city= into a resolved city, defaulting to SF", () => {
+  it("parses ?city= into a resolved token, defaulting to SF", () => {
     expect(parseFilters({}).city).toBe(DEFAULT_CITY);
-    expect(parseFilters({ city: "Oakland" }).city).toBe("Oakland");
+    expect(parseFilters({ city: "Berkeley" }).city).toBe("Berkeley");
+    expect(parseFilters({ city: "East Bay" }).city).toBe("East Bay");
     expect(parseFilters({ city: "nope" }).city).toBe(DEFAULT_CITY);
   });
 
@@ -34,7 +58,7 @@ describe("filters — city round-trip", () => {
     const base = parseFilters({});
     expect(buildSearchString(base)).not.toContain("city=");
 
-    const oakland = parseFilters({ city: "Oakland" });
-    expect(buildSearchString(oakland)).toContain("city=Oakland");
+    const eastBay = parseFilters({ city: "East Bay" });
+    expect(buildSearchString(eastBay)).toContain("city=East");
   });
 });
