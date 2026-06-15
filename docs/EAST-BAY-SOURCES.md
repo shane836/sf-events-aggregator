@@ -25,6 +25,7 @@ Statuses verified as of June 2026 — re-check before implementing (venues close
 | --- | --- | --- | --- |
 | `ticketmaster` | api | music, comedy | Now queries **Oakland** + SF and tags `venue.city`. Covers **Fox Theater**, **Paramount Theatre**, and every other Ticketmaster-ticketed Oakland venue. |
 | `ical:omca` | ical | food, lectures, music, dancing | **Oakland Museum of California** public-program feed (`/events/?ical=1`, robots-allowed). Maps "Friday Nights at OMCA / Off the Grid" food-truck nights → food; talks/performances → lectures/music. |
+| `scrape:eventbrite` | scrape | all 5 | **Eventbrite East Bay.** robots allows `/d/` `/e/` `/o/`. Two-phase: harvest event URLs from each city's discovery listing, then parse each event page's schema.org Event JSON-LD. City is tagged from the event's own address (discovery bleeds Bay-wide); events outside our cities/taxonomy are skipped. Covers Comedy Oakland, The Ruckus Revival, The Sound Room, salsa socials, etc. |
 
 ---
 
@@ -98,7 +99,7 @@ Records (not booking shows).
 
 | Aggregator | Oakland coverage | Structured data | Verdict |
 | --- | --- | --- | --- |
-| **Eventbrite** (`/d/ca--oakland/...`) | Broad | **Public API + per-event JSON-LD** | **Best aggregator path.** Powers Comedy Oakland, Ruckus Revival, The Sound Room, many dance socials. Recommended next adapter. |
+| **Eventbrite** (`/d/ca--<city>/...`) | Broad | per-event schema.org JSON-LD (discovery API retired) | ✅ Implemented as `scrape:eventbrite`. Powers Comedy Oakland, Ruckus Revival, The Sound Room, many dance socials. |
 | **Funcheap East Bay** (`eastbay.funcheap.com`) | Broad, free/cheap | WordPress listing (same shape as our SF `funcheapfood` scraper) | Good candidate — mirrors the existing Funcheap adapter; community-tier. Verify the East Bay archive path & robots before adding. |
 | **SF Station** (`/calendar/east-bay/oakland`) | **Granular** (neighborhood + category) | robots allows `/calendar/`, but format unverified | ⚠️ **Anti-bot 403** on all fetches. Richest taxonomy but needs a headless/allowed approach. |
 | **DoTheBay / eastbay.dothebay.com** | Strong East Bay | Unverified | ⚠️ **Cloudflare 403** — blocked to simple HTTP clients. |
@@ -127,14 +128,15 @@ ticketing backend (Ticketmaster/Eventbrite/TicketWeb) over Facebook itself.
 
 ## Recommended implementation order
 
-1. ✅ **`ticketmaster` → Oakland** (done) — Fox, Paramount, marquee touring acts.
+1. ✅ **`ticketmaster` → East Bay** (done) — Fox, Paramount, Greek Theatre,
+   marquee touring acts across SF + East Bay.
 2. ✅ **`ical:omca`** (done) — free food-truck nights + museum programming.
-3. **Eventbrite Oakland** (`api`) — unlocks Comedy Oakland, Ruckus Revival,
-   The Sound Room, salsa socials in one robots-clean, JSON-LD-backed source.
+3. ✅ **`scrape:eventbrite`** (done) — Comedy Oakland, Ruckus Revival, The
+   Sound Room, salsa socials, and broad indie coverage via event-page JSON-LD.
 4. **Funcheap East Bay** (`scrape`) — clone the SF `funcheapfood` adapter for
    broad free/cheap coverage across all categories.
-5. **Eli's Mile High Club** (`scrape`) — Wix events, robots-allowed, distinct
-   punk/garage niche not covered by Ticketmaster.
+5. **Berkeley venues** (`scrape`/`api`) — Freight & Salvage and UC Theatre
+   (clean calendars), Ashkenaz (VenuePilot) for `city=Berkeley` dance.
 
 Lower priority / blocked: SF Station and DoTheBay (anti-bot 403), Songkick
 (closed API + AI-bot block), Squarespace farmers markets (AI-bot block).
