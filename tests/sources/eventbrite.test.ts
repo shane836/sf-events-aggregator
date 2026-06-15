@@ -1,12 +1,17 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import * as cheerio from "cheerio";
 import { describe, expect, it } from "vitest";
 import adapter, {
   classifyCategory,
   eventIdFromUrl,
-  extractEventUrls,
+  extractEventNodes,
   parseEventbriteNode,
   parseOffers,
   resolveCity,
 } from "@/lib/sources/eventbrite";
+import { parseJsonLd } from "@/lib/scrape";
+import { INGEST_CITY_NAMES } from "@/lib/ui/cities";
 import type { Provenance, RawEvent } from "@/lib/sources/types";
 
 const fetchedAt = new Date("2026-06-15T00:00:00Z");
@@ -35,6 +40,7 @@ function node(overrides: Record<string, unknown> = {}): Record<string, unknown> 
         addressRegion: "CA",
         postalCode: "94607",
       },
+      geo: { "@type": "GeoCoordinates", latitude: "37.795", longitude: "-122.276" },
     },
     offers: { "@type": "Offer", price: "20", priceCurrency: "USD" },
     ...overrides,
@@ -49,18 +55,24 @@ describe("Eventbrite adapter — identity", () => {
   });
 });
 
-describe("extractEventUrls", () => {
-  it("pulls distinct /e/ event URLs and dedupes on numeric id", () => {
-    const html = `
-      <a href="/e/show-one-tickets-111111111">one</a>
-      <a href="/e/show-one-tickets-111111111?aff=x">one again</a>
-      <a href="/e/show-two-tickets-222222222/">two</a>
-      <a href="/help">nope</a>
-    `;
-    const urls = extractEventUrls(html);
-    expect(urls).toHaveLength(2);
-    expect(urls[0]).toBe("https://www.eventbrite.com/e/show-one-tickets-111111111");
-    expect(urls[1]).toBe("https://www.eventbrite.com/e/show-two-tickets-222222222");
+describe("extractEventNodes", () => {
+  it("unwraps Event items from an ItemList", () => {
+    const nodes = [
+      {
+        "@type": "ItemList",
+        itemListElement: [
+          { "@type": "ListItem", item: node() },
+          { "@type": "ListItem", item: { "@type": "Place", name: "not an event" } },
+        ],
+      },
+    ];
+    const events = extractEventNodes(nodes);
+    expect(events).toHaveLength(1);
+    expect(events[0].name).toBe("Comedy Oakland Live");
+  });
+
+  it("also accepts top-level Event nodes", () => {
+    expect(extractEventNodes([node()])).toHaveLength(1);
   });
 });
 
@@ -121,13 +133,15 @@ describe("parseOffers", () => {
 });
 
 describe("parseEventbriteNode", () => {
-  it("parses a complete node and tags city from the address", () => {
+  it("parses a complete node, tagging city + geo from the address", () => {
     const raw = parseEventbriteNode(node(), fetchedAt);
     expect(raw).not.toBeNull();
     expect(raw!.identity.source).toBe("scrape:eventbrite");
     expect(raw!.identity.externalId).toBe("1988692806719");
     expect(raw!.venue.city).toBe("Oakland");
     expect(raw!.venue.name).toBe("Elbo Room");
+    expect(raw!.venue.lat).toBe(37.795);
+    expect(raw!.venue.lng).toBe(-122.276);
     expect(raw!.primaryCategory).toBe("comedy");
     expect(raw!.pricing?.priceMin).toBe(20);
     expect(raw!.verificationLevel).toBe("trusted_partner");
@@ -166,5 +180,36 @@ describe("parseEventbriteNode", () => {
     expect(norm.canonicalFingerprint).toMatch(/^[a-f0-9]{32}$/);
     expect(norm.venue.city).toBe("Oakland");
     expect(adapter.normalize(raw, provenance)).toEqual(norm);
+  });
+});
+
+describe("Eventbrite fixture parsing (regression)", () => {
+  // Real captured discovery-page JSON-LD (Oakland, June 2026). Exercises the
+  // exact fetch() pipeline: parseJsonLd -> extractEventNodes -> parse/normalize.
+  it("extracts the ItemList and parses real events from the saved fixture", () => {
+    const html = readFileSync(
+      resolve(process.cwd(), "fixtures/raw/eventbrite-discovery.html"),
+      "utf-8",
+    );
+    const $ = cheerio.load(html);
+    const nodes = extractEventNodes(parseJsonLd($));
+    // Eventbrite renders ~20 events per discovery page.
+    expect(nodes.length).toBeGreaterThanOrEqual(15);
+
+    let parsed = 0;
+    const fingerprints = new Set<string>();
+    for (const n of nodes) {
+      const raw = parseEventbriteNode(n, fetchedAt);
+      if (!raw) continue; // skipped by city/taxonomy filters — expected
+      parsed++;
+      expect(INGEST_CITY_NAMES).toContain(raw.venue.city);
+      expect(raw.identity.sourceUrl).toMatch(/eventbrite\.com\/e\//);
+      const norm = adapter.normalize(raw, provenance);
+      expect(norm.canonicalFingerprint).toMatch(/^[a-f0-9]{32}$/);
+      fingerprints.add(norm.canonicalFingerprint);
+    }
+    // At least some real listings survive the city + taxonomy filters.
+    expect(parsed).toBeGreaterThanOrEqual(1);
+    expect(fingerprints.size).toBe(parsed);
   });
 });

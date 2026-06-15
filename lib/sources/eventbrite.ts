@@ -1,4 +1,4 @@
-import { fetchHtml, parseJsonLd, filterEventNodes, resolveUrl } from "@/lib/scrape";
+import { fetchHtml, parseJsonLd, filterEventNodes } from "@/lib/scrape";
 import { fingerprint } from "@/lib/identity";
 import { INGEST_CITY_NAMES } from "@/lib/ui/cities";
 import type {
@@ -15,40 +15,35 @@ import type {
 /**
  * Eventbrite (East Bay) — Tier-3 JSON-LD scraper.
  *
- * Eventbrite's public discovery API was retired, but its public pages are
- * crawlable (robots.txt allows /d/ discovery, /e/ event, /o/ organizer) and
- * every event detail page ships a schema.org `Event` JSON-LD block. So we:
+ * Eventbrite's public discovery API was retired, but its discovery pages are
+ * crawlable (robots.txt allows /d/) and each one embeds a schema.org `ItemList`
+ * of ~20 fully-populated `Event` nodes (name, date, address, geo, url). So we
+ * fetch ONE discovery page per East Bay city and read the ItemList — no
+ * per-event page fetches. That keeps the run to a handful of requests:
+ * Eventbrite 405-throttles rapid repeated hits, so request volume matters.
  *
- *   1. fetch each East Bay city's discovery listing and harvest `/e/` event
- *      URLs from the anchors (one request per city);
- *   2. fetch each event page (bounded by MAX_EVENTS) and parse its JSON-LD.
+ * City is taken from each event's own JSON-LD address (`addressLocality`) — not
+ * the discovery query — because listings bleed across the wider Bay Area.
+ * Events outside our cities, or whose title/description doesn't map to our
+ * 5-category taxonomy, are skipped: precision over volume.
  *
- * City is taken from the event's own JSON-LD address (`addressLocality`), not
- * the discovery query — discovery listings bleed across the wider Bay Area, so
- * per-event addresses are the accurate signal. Events whose city isn't one we
- * cover, or whose title/description doesn't map to our 5-category taxonomy, are
- * skipped — precision over volume.
- *
- * Eventbrite is a ticketing platform with structured first-party listings →
- * verificationLevel "trusted_partner" (same tier as Ticketmaster).
+ * The discovery ItemList carries no price, so pricing is the canonical "price
+ * varies" shape (null/null/false). Eventbrite is a ticketing platform with
+ * structured first-party listings → verificationLevel "trusted_partner".
  */
 
 const ID = "scrape:eventbrite";
 const TZ = "America/Los_Angeles";
 const BASE = "https://www.eventbrite.com";
 
-// One discovery listing per East Bay city. `--all-events` is the unfiltered
-// city feed; we classify/skip per event afterward.
+// One discovery listing per East Bay city. `all-events` is the unfiltered city
+// feed; we classify/skip per event afterward.
 const DISCOVERY_PATHS: Record<string, string> = {
   Oakland: "/d/ca--oakland/all-events/",
   Berkeley: "/d/ca--berkeley/all-events/",
   Emeryville: "/d/ca--emeryville/all-events/",
   Alameda: "/d/ca--alameda/all-events/",
 };
-
-// Bound the per-run event-page fetches so a single source can't dominate the
-// daily cron.
-const MAX_EVENTS = 40;
 
 function getString(node: Record<string, unknown>, key: string): string | null {
   const v = node[key];
@@ -66,24 +61,39 @@ function getNested(
   return null;
 }
 
-/**
- * Harvest distinct Eventbrite event-detail URLs from a discovery listing's
- * HTML. Event URLs look like `/e/<slug>-tickets-<id>`; we dedupe on the
- * trailing numeric id.
- */
-export function extractEventUrls(html: string, baseUrl: string = BASE): string[] {
-  const out: string[] = [];
-  const seen = new Set<string>();
-  const re = /\/e\/[a-z0-9-]*?(\d{6,})(?:[/?#]|")/gi;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(html)) !== null) {
-    const id = m[1];
-    if (seen.has(id)) continue;
-    seen.add(id);
-    const path = m[0].replace(/["/?#]+$/, "");
-    const abs = resolveUrl(path, baseUrl);
-    if (abs) out.push(abs);
+function numberFrom(v: unknown): number | null {
+  if (typeof v === "number" && Number.isFinite(v)) return v;
+  if (typeof v === "string" && v.trim() !== "") {
+    const n = Number(v);
+    if (Number.isFinite(n)) return n;
   }
+  return null;
+}
+
+/**
+ * Pull `Event` nodes out of parsed JSON-LD. Eventbrite discovery pages nest
+ * events inside an `ItemList` as `itemListElement[].item`; we also accept
+ * top-level Event nodes as a fallback (event detail pages / format changes).
+ */
+export function extractEventNodes(
+  nodes: unknown[],
+): Record<string, unknown>[] {
+  const out: Record<string, unknown>[] = [];
+  for (const n of nodes) {
+    if (!n || typeof n !== "object") continue;
+    const node = n as Record<string, unknown>;
+    if (node["@type"] === "ItemList" && Array.isArray(node.itemListElement)) {
+      for (const el of node.itemListElement) {
+        const item = el && typeof el === "object"
+          ? getNested(el as Record<string, unknown>, "item")
+          : null;
+        if (item && /Event/i.test(String(item["@type"]))) out.push(item);
+      }
+    }
+  }
+  // Top-level Event nodes (de-duped against ItemList items by reference is
+  // unnecessary — Eventbrite uses one or the other per page).
+  out.push(...filterEventNodes(nodes));
   return out;
 }
 
@@ -149,19 +159,11 @@ export function classifyCategory(
   return null;
 }
 
-function numberFrom(v: unknown): number | null {
-  if (typeof v === "number" && Number.isFinite(v)) return v;
-  if (typeof v === "string" && v.trim() !== "") {
-    const n = Number(v);
-    if (Number.isFinite(n)) return n;
-  }
-  return null;
-}
-
 /**
  * Derive PriceInfo from a schema.org `offers` value (object or array). Eventbrite
  * uses `price` / `lowPrice` / `highPrice`. All-zero → free; absent → the
- * canonical "price varies" shape (null/null/false).
+ * canonical "price varies" shape (null/null/false). The discovery ItemList
+ * carries no offers, so most events resolve to "price varies".
  */
 export function parseOffers(offers: unknown): PriceInfo {
   const list = Array.isArray(offers) ? offers : offers != null ? [offers] : [];
@@ -183,9 +185,9 @@ export function parseOffers(offers: unknown): PriceInfo {
 }
 
 /**
- * Parse one schema.org Event JSON-LD node from an Eventbrite event page into a
- * RawEvent. Returns null when required identity fields are missing, the venue
- * is outside our cities, or the category doesn't map.
+ * Parse one schema.org Event JSON-LD node into a RawEvent. Returns null when
+ * required identity fields are missing, the venue is outside our cities, or the
+ * category doesn't map.
  */
 export function parseEventbriteNode(
   node: Record<string, unknown>,
@@ -225,6 +227,10 @@ export function parseEventbriteNode(
         .join(", ") || null;
   }
 
+  const geo = location ? getNested(location, "geo") : null;
+  const lat = geo ? numberFrom(geo.latitude) : null;
+  const lng = geo ? numberFrom(geo.longitude) : null;
+
   const id = eventIdFromUrl(url) ?? url;
 
   return {
@@ -239,8 +245,8 @@ export function parseEventbriteNode(
       city,
       neighborhood: null,
       address: venueAddress,
-      lat: null,
-      lng: null,
+      lat,
+      lng,
       timezone: TZ,
     },
     primaryCategory: category,
@@ -261,56 +267,35 @@ const adapter: SourceAdapter = {
     const events: RawEvent[] = [];
     const errors: SourceError[] = [];
     const fetchedAt = new Date();
-
-    // Phase 1: harvest event-detail URLs from each city's discovery listing.
-    const eventUrls: string[] = [];
     const seenIds = new Set<string>();
+
     for (const path of Object.values(DISCOVERY_PATHS)) {
-      const listingUrl = `${BASE}${path}`;
+      const url = `${BASE}${path}`;
       try {
-        const { html } = await fetchHtml(listingUrl);
-        for (const url of extractEventUrls(html, BASE)) {
-          const id = eventIdFromUrl(url);
-          if (!id || seenIds.has(id)) continue;
-          seenIds.add(id);
-          eventUrls.push(url);
+        const { $ } = await fetchHtml(url);
+        const nodes = extractEventNodes(parseJsonLd($));
+        for (const node of nodes) {
+          try {
+            const ev = parseEventbriteNode(node, fetchedAt);
+            if (!ev) continue;
+            if (seenIds.has(ev.identity.externalId)) continue;
+            seenIds.add(ev.identity.externalId);
+            events.push(ev);
+          } catch (err) {
+            errors.push({
+              source: ID,
+              stage: "parse",
+              message: err instanceof Error ? err.message : String(err),
+              retryable: false,
+              occurredAt: new Date(),
+            });
+          }
         }
       } catch (err) {
         errors.push({
           source: ID,
           stage: "fetch",
-          message: `discovery ${listingUrl}: ${err instanceof Error ? err.message : String(err)}`,
-          retryable: true,
-          occurredAt: new Date(),
-        });
-      }
-    }
-
-    if (eventUrls.length === 0 && errors.length === 0) {
-      errors.push({
-        source: ID,
-        stage: "parse",
-        message: "no event URLs found on East Bay discovery listings — page format may have changed",
-        retryable: false,
-        occurredAt: new Date(),
-      });
-    }
-
-    // Phase 2: fetch each event page (bounded) and parse its JSON-LD Event.
-    for (const url of eventUrls.slice(0, MAX_EVENTS)) {
-      try {
-        const { $ } = await fetchHtml(url);
-        const nodes = filterEventNodes(parseJsonLd($));
-        for (const node of nodes) {
-          const ev = parseEventbriteNode(node, fetchedAt);
-          if (ev) events.push(ev);
-        }
-      } catch (err) {
-        errors.push({
-          source: ID,
-          externalId: eventIdFromUrl(url) ?? undefined,
-          stage: "parse",
-          message: `event ${url}: ${err instanceof Error ? err.message : String(err)}`,
+          message: `discovery ${url}: ${err instanceof Error ? err.message : String(err)}`,
           retryable: true,
           occurredAt: new Date(),
         });
