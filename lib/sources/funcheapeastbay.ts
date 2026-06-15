@@ -54,30 +54,32 @@ export function classifyCategory(
 ): Category | null {
   const text = `${title} ${venue ?? ""}`.toLowerCase();
 
-  if (/comedy|stand-?up|improv|open mic.*comed/.test(text)) return "comedy";
+  if (/comedy|stand-?up|improv|\bcomic\b|sketch show|laugh|open mic.*comed/.test(text)) {
+    return "comedy";
+  }
   if (
-    /\bdance\b|dancing|salsa|bachata|cumbia|ballroom|\brave\b|club night|disco|\bdj\b/.test(
+    /\bdance\b|dancing|salsa|bachata|cumbia|reggaeton|kizomba|ballroom|swing night|\brave\b|club night|night ?club|\bdisco\b|\bdj\b|house music|\btechno\b|bollywood|afrobeat|line danc|burlesque/.test(
       text,
     )
   ) {
     return "dancing";
   }
   if (
-    /\bfood\b|food truck|tasting|brunch|happy hour|\bwine\b|\bbeer\b|cocktail|culinary|night market|farmers? market|pop-?up/.test(
+    /\bfood\b|food truck|tasting|brunch|\bdinner\b|supper|\bbrewery\b|happy hour|\bwine\b|\bbeer\b|cocktail|culinary|\beats\b|night market|farmers? market|pop-?up|\bvegan\b|\bbbq\b|barbecue|chef|bites|dim sum|festival.*food|food.*festival/.test(
       text,
     )
   ) {
     return "food";
   }
   if (
-    /concert|live music|\bband\b|jazz|orchestra|symphony|acoustic|hip-?hop|songwriter|tribute|open mic/.test(
+    /concert|live music|live band|\bband\b|jazz|blues|\bfunk\b|orchestra|symphony|philharmonic|acoustic|singer|songwriter|\bgig\b|hip-?hop|\brap\b|reggae|\bindie\b|\bpunk\b|\bmetal\b|\brock\b|open mic|karaoke|tribute|music festival|showcase/.test(
       text,
     )
   ) {
     return "music";
   }
   if (
-    /lecture|\btalk\b|\bauthor\b|book reading|\breading\b|seminar|workshop|panel|poetry|spoken word|history/.test(
+    /lecture|\btalk\b|fireside|keynote|\bauthor\b|book reading|\breading\b|seminar|workshop|\bclass\b|masterclass|panel|discussion|poetry|spoken word|storytelling|history|museum|exhibit|q&a/.test(
       text,
     )
   ) {
