@@ -33,8 +33,26 @@ jobs:
           echo "Discovered sources: $sources"
           echo "sources=$sources" >> "$GITHUB_OUTPUT"
 
+  # Apply any pending schema migrations BEFORE ingesting, so adapters never
+  # write against a stale schema (e.g. the venues.city column). Runs once.
+  migrate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "26"
+          cache: "npm"
+      - name: Install dependencies
+        run: npm ci
+      - name: Apply pending migrations
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: npx drizzle-kit migrate
+
   ingest:
-    needs: list-sources
+    needs: [list-sources, migrate]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
