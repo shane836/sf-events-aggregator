@@ -5,6 +5,9 @@
   --color-foreground: #f4f4f5; /* zinc-100 */
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  --color-metro-sf: #facc15;
+  --color-metro-la: #e86347;
+  --color-metro-nyc: #5b8def;
 }
 
 html {

@@ -9,6 +9,13 @@ import {
   VALID_CATEGORIES,
   type DatePreset,
 } from "@/lib/ui/filters";
+import {
+  DEFAULT_CITY,
+  METROS,
+  metroForSelection,
+  resolveCity,
+  type CitySelection,
+} from "@/lib/ui/cities";
 
 const PRESET_ORDER: ReadonlyArray<Exclude<DatePreset, "custom">> = [
   "today",
@@ -33,6 +40,19 @@ export function FilterBar({
   const router = useRouter();
   const params = useSearchParams();
   const [isPending, startTransition] = useTransition();
+
+  const currentCity = resolveCity(params.get("city"));
+  const activeMetro = metroForSelection(currentCity);
+  const activeZones: ReadonlyArray<CitySelection> =
+    activeMetro?.zones ?? METROS[0].zones;
+
+  const setZone = (value: string) => {
+    const next = new URLSearchParams(params.toString());
+    if (value === DEFAULT_CITY) next.delete("city");
+    else next.set("city", value);
+    next.delete("neighborhood");
+    replace(next);
+  };
 
   const selectedCategories = useMemo(() => {
     const values = params.getAll("category");
@@ -141,8 +161,27 @@ export function FilterBar({
           })}
         </div>
 
-        {/* Date + Neighborhood + Reset */}
+        {/* Zone + Date + Neighborhood + Reset */}
         <div className="flex flex-wrap items-center gap-2">
+          <label htmlFor="zone-selector" className="sr-only">
+            Zone
+          </label>
+          <select
+            id="zone-selector"
+            data-testid="zone-selector"
+            value={currentCity}
+            onChange={(e) => setZone(e.target.value)}
+            className="min-h-[44px] rounded-md border border-zinc-800 bg-zinc-900 px-2 py-1 text-xs text-zinc-200 focus:outline-none focus:ring-2 focus:ring-zinc-400"
+          >
+            {activeZones.map((z) => (
+              <option key={z.value} value={z.value}>
+                {z.label}
+              </option>
+            ))}
+          </select>
+
+          <div className="mx-1 h-5 w-px bg-zinc-700" aria-hidden="true" />
+
           {viewModeActive ? null : (
             <>
               <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-zinc-400">

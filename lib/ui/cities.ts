@@ -172,6 +172,23 @@ export const LA_CITY_NAMES: ReadonlyArray<string> = [
 ];
 
 // ---------------------------------------------------------------------------
+// New York — boroughs
+// ---------------------------------------------------------------------------
+
+const NYC_BOROUGH_NAMES = [
+  "Manhattan",
+  "Brooklyn",
+  "Queens",
+  "Bronx",
+  "Staten Island",
+] as const;
+
+export const NYC_CITY_NAMES: ReadonlyArray<string> = [
+  "New York",
+  ...NYC_BOROUGH_NAMES,
+];
+
+// ---------------------------------------------------------------------------
 // Combined ingestion / query lists
 // ---------------------------------------------------------------------------
 
@@ -183,6 +200,7 @@ export const INGEST_CITY_NAMES: ReadonlyArray<string> = [
   "San Francisco",
   ...EAST_BAY_CITY_NAMES,
   ...LA_CITY_NAMES,
+  ...NYC_CITY_NAMES,
 ];
 
 /**
@@ -235,6 +253,13 @@ const BAY_AREA_ZONES: ReadonlyArray<CitySelection> = [
   },
 ];
 
+const ALL_BAY_AREA: CitySelection = {
+  value: "Bay Area",
+  label: "All Bay Area",
+  cities: ["San Francisco", ...EAST_BAY_CITY_NAMES, GENERIC_EAST_BAY],
+  group: "Bay Area",
+};
+
 const LA_ZONES: ReadonlyArray<CitySelection> = [
   {
     value: "LA West",
@@ -268,19 +293,65 @@ const LA_ZONES: ReadonlyArray<CitySelection> = [
   },
 ];
 
+const ALL_LA: CitySelection = {
+  value: "All LA",
+  label: "All LA",
+  cities: [...LA_CITY_NAMES],
+  group: "Los Angeles",
+};
+
+const NYC_ZONES: ReadonlyArray<CitySelection> = [
+  {
+    value: "Manhattan",
+    label: "Manhattan",
+    cities: ["Manhattan"],
+    group: "New York",
+  },
+  {
+    value: "Brooklyn",
+    label: "Brooklyn",
+    cities: ["Brooklyn"],
+    group: "New York",
+  },
+  {
+    value: "Queens",
+    label: "Queens",
+    cities: ["Queens"],
+    group: "New York",
+  },
+  {
+    value: "Bronx",
+    label: "Bronx",
+    cities: ["Bronx"],
+    group: "New York",
+  },
+  {
+    value: "Staten Island",
+    label: "Staten Island",
+    cities: ["Staten Island"],
+    group: "New York",
+  },
+];
+
+const ALL_NYC: CitySelection = {
+  value: "All NYC",
+  label: "All NYC",
+  cities: ["New York", ...NYC_BOROUGH_NAMES],
+  group: "New York",
+};
+
 export const METROS: ReadonlyArray<Metro> = [
-  { value: "bay-area", label: "Bay Area", zones: BAY_AREA_ZONES },
-  { value: "la", label: "Los Angeles", zones: LA_ZONES },
+  { value: "bay-area", label: "Bay Area", zones: [ALL_BAY_AREA, ...BAY_AREA_ZONES] },
+  { value: "la", label: "Los Angeles", zones: [ALL_LA, ...LA_ZONES] },
+  { value: "nyc", label: "New York", zones: [ALL_NYC, ...NYC_ZONES] },
 ];
 
 /**
  * Flat list of all zone selections across all metros. The city selector
  * iterates this; `citiesForSelection()` resolves against it.
  */
-export const CITY_SELECTIONS: ReadonlyArray<CitySelection> = [
-  ...BAY_AREA_ZONES,
-  ...LA_ZONES,
-];
+export const CITY_SELECTIONS: ReadonlyArray<CitySelection> =
+  METROS.flatMap((m) => m.zones);
 
 // ---------------------------------------------------------------------------
 // Lookups
@@ -309,7 +380,8 @@ export function resolveCity(value: string | null | undefined): string {
  * input resolves to the default city's set.
  */
 export function citiesForSelection(value: string | null | undefined): string[] {
-  return (findSelection(value) ?? CITY_SELECTIONS[0]).cities;
+  const sel = findSelection(value) ?? findSelection(DEFAULT_CITY);
+  return sel ? sel.cities : ["San Francisco"];
 }
 
 /** True when `value` is a canonical selection token (case-sensitive). */
