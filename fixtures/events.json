@@ -60,21 +60,6 @@
     "verificationLevel": "unverified"
   },
   {
-    "id": "f1a00000-0000-0000-0000-000000000005",
-    "source": "seatgeek",
-    "externalId": "sg-warfield-9999",
-    "sourceUrl": "https://seatgeek.com/event/9999",
-    "title": "Anderson .Paak & The Free Nationals — A Very Long Title That Goes On To Test Truncation In The Calendar Grid Cell",
-    "description": "Multi-night residency.",
-    "category": "music",
-    "startTimeUtc": "2026-06-14T03:30:00Z",
-    "endTimeUtc": "2026-06-14T06:00:00Z",
-    "timezone": "America/Los_Angeles",
-    "venue": { "name": "The Warfield", "neighborhood": "Tenderloin", "address": "982 Market St" },
-    "pricing": { "priceMin": 85, "priceMax": 250, "isFree": false },
-    "verificationLevel": "trusted_partner"
-  },
-  {
     "id": "f1a00000-0000-0000-0000-000000000006",
     "source": "scrape:punchline",
     "externalId": "pl-hannibal-7pm",

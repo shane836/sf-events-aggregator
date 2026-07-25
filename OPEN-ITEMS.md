@@ -51,7 +51,6 @@ Current behavior: day/week/weekend are date-range *filters* that leave the month
 
 Memory said M1 was "shipped," repo state says 6 of the planned adapters were never built. Data is sufficient for now; pick these up after M5.
 
-- `seatgeek` adapter — blocked on `SEATGEEK_API_KEY` from Shane
 - `ical:sfsymphony` — find iCal feed on sfsymphony.org
 - `ical:sfjazz` — find iCal feed on sfjazz.org
 - `ical:usf` — Localist platform, try `myusf.usfca.edu/calendar/1.ics`

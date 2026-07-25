@@ -103,7 +103,7 @@ Same generator/evaluator separation as prior rubrics — the agent that writes t
 
 ## Explicit non-goals for M1-v2
 
-- Adding Ticketmaster, SeatGeek, or any new sources (those happen *after* the contract lands)
+- Adding Ticketmaster or any new sources (those happen *after* the contract lands)
 - GitHub Actions cron (M1c)
 - UI rendering of `formatPriceDisplay()` (M2)
 - Email digest (M4)

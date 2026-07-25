@@ -1,5 +1,6 @@
 import { fetchHtml, parseJsonLd, filterEventNodes } from "@/lib/scrape";
 import { fingerprint } from "@/lib/identity";
+import { reclassifyLACity } from "@/lib/geo/la-zones";
 import { INGEST_CITY_NAMES } from "@/lib/ui/cities";
 import type {
   Category,
@@ -13,19 +14,19 @@ import type {
 } from "./types";
 
 /**
- * Eventbrite (East Bay) — Tier-3 JSON-LD scraper.
+ * Eventbrite — Tier-3 JSON-LD scraper (Bay Area + LA).
  *
  * Eventbrite's public discovery API was retired, but its discovery pages are
  * crawlable (robots.txt allows /d/) and each one embeds a schema.org `ItemList`
  * of ~20 fully-populated `Event` nodes (name, date, address, geo, url). So we
- * fetch ONE discovery page per East Bay city and read the ItemList — no
+ * fetch ONE discovery page per anchor city and read the ItemList — no
  * per-event page fetches. That keeps the run to a handful of requests:
  * Eventbrite 405-throttles rapid repeated hits, so request volume matters.
  *
  * City is taken from each event's own JSON-LD address (`addressLocality`) — not
- * the discovery query — because listings bleed across the wider Bay Area.
- * Events outside our cities, or whose title/description doesn't map to our
- * 5-category taxonomy, are skipped: precision over volume.
+ * the discovery query — because listings bleed across metros. For LA events
+ * with addressLocality "Los Angeles", the city is reclassified to a zone-
+ * specific name (LA West, LA Central, etc.) using lat/lng geofencing.
  *
  * The discovery ItemList carries no price, so pricing is the canonical "price
  * varies" shape (null/null/false). Eventbrite is a ticketing platform with
@@ -36,19 +37,25 @@ const ID = "scrape:eventbrite";
 const TZ = "America/Los_Angeles";
 const BASE = "https://www.eventbrite.com";
 
-// One discovery listing per East Bay city. `all-events` is the unfiltered city
-// feed; we classify/skip per event afterward.
-// Discovery listings bleed across the wider Bay Area, so a handful of spread-out
-// East Bay anchors (inner ring + West County + Central County) is enough to
-// surface events from every East Bay city; each event is re-tagged with its own
-// city. Kept small because Eventbrite 405-throttles request bursts.
+// Discovery anchors per metro. Each anchor yields ~20 events; events bleed
+// across the wider area, so a handful of spread-out cities is enough. Each
+// event is re-tagged with its own city from JSON-LD addressLocality.
+// Kept small because Eventbrite 405-throttles request bursts.
 const DISCOVERY_PATHS: Record<string, string> = {
+  // Bay Area — East Bay anchors
   Oakland: "/d/ca--oakland/all-events/",
   Berkeley: "/d/ca--berkeley/all-events/",
   Emeryville: "/d/ca--emeryville/all-events/",
   Alameda: "/d/ca--alameda/all-events/",
   Richmond: "/d/ca--richmond/all-events/",
   "Walnut Creek": "/d/ca--walnut-creek/all-events/",
+  // LA metro — one anchor per zone
+  "Los Angeles": "/d/ca--los-angeles/all-events/",
+  "Santa Monica": "/d/ca--santa-monica/all-events/",
+  Pasadena: "/d/ca--pasadena/all-events/",
+  "Long Beach": "/d/ca--long-beach/all-events/",
+  Burbank: "/d/ca--burbank/all-events/",
+  Glendale: "/d/ca--glendale/all-events/",
 };
 
 function getString(node: Record<string, unknown>, key: string): string | null {
@@ -220,8 +227,8 @@ export function parseEventbriteNode(
   const location = getNested(node, "location");
   const address = location ? getNested(location, "address") : null;
   const locality = address ? getString(address, "addressLocality") : null;
-  const city = resolveCity(locality);
-  if (!city) return null; // outside our metros
+  const resolvedCity = resolveCity(locality);
+  if (!resolvedCity) return null; // outside our metros
 
   const description = getString(node, "description");
   const category = classifyCategory(name, description);
@@ -242,6 +249,10 @@ export function parseEventbriteNode(
   const geo = location ? getNested(location, "geo") : null;
   const lat = geo ? numberFrom(geo.latitude) : null;
   const lng = geo ? numberFrom(geo.longitude) : null;
+
+  // "Los Angeles" spans all 5 zones — reclassify to a zone city name using
+  // lat/lng. Independent cities (Santa Monica, Burbank, etc.) pass through.
+  const city = reclassifyLACity(resolvedCity, lat, lng);
 
   const id = eventIdFromUrl(url) ?? url;
 
@@ -283,8 +294,9 @@ const adapter: SourceAdapter = {
 
     const paths = Object.values(DISCOVERY_PATHS);
     for (let i = 0; i < paths.length; i++) {
-      // Space requests out — Eventbrite 405-throttles bursts.
-      if (i > 0) await sleep(1500);
+      // Space requests out — Eventbrite 405-throttles bursts. With 12 anchor
+      // cities the run takes ~24s of sleep; still well within ingest budgets.
+      if (i > 0) await sleep(2000);
       const url = `${BASE}${paths[i]}`;
       try {
         const { $ } = await fetchHtml(url);

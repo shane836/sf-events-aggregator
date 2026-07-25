@@ -67,7 +67,7 @@ Every event your adapter emits must match the shape in `fixtures/events.json`. T
 
 ## Naming & conventions
 
-- Adapter id format: `<tier>:<slug>` for ical/scrape (`ical:ucsf`, `scrape:cobbs`), bare name for top-tier APIs (`ticketmaster`, `seatgeek`).
+- Adapter id format: `<tier>:<slug>` for ical/scrape (`ical:ucsf`, `scrape:cobbs`), bare name for top-tier APIs (`ticketmaster`).
 - File: `lib/sources/<slug>.ts` (slug is just the part after the colon).
 - Test: `tests/sources/<slug>.test.ts`.
 - Default-export the adapter object.
@@ -136,7 +136,7 @@ export default adapter;
 
 For iCal sources, `lib/ical.ts` provides `fetchICalEvents(url, { horizonDays })` and `splitLocation(loc)` — use them.
 
-For API sources (Ticketmaster, SeatGeek), call `fetch()` directly with the API key from `process.env`. Add the key to `.env.example` and document it in your PR.
+For API sources (Ticketmaster), call `fetch()` directly with the API key from `process.env`. Add the key to `.env.example` and document it in your PR.
 
 For scraper sources (M3), prefer Cheerio over Playwright unless the page requires JS execution.
 

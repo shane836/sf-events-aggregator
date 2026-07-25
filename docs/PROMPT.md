@@ -36,7 +36,6 @@ Build using a **Plan-Generate-Evaluate (PGE) loop**: for every milestone, write 
 
 ### Tier 1 — Free APIs
 - **Ticketmaster Discovery API** (5,000 calls/day free) — large music + comedy venues
-- **SeatGeek API** (free with key) — overlapping music coverage
 
 ### Tier 2 — iCal / structured feeds (verify availability per source)
 - events.stanford.edu, events.berkeley.edu, calendar.ucsf.edu, myusf.usfca.edu/events, events.sfsu.edu, cca.edu/events
@@ -140,12 +139,12 @@ The evaluator should run in a separate context from the generator (a sub-agent o
 - `npx create-next-app@latest` (TS, App Router, Tailwind, ESLint)
 - Init git, push to new GitHub repo
 - Provision Neon Postgres (free tier), wire Drizzle, write `events` + `venues` + `digest_sends` schemas
-- Vercel project linked to repo, env vars set (`DATABASE_URL`, future `TICKETMASTER_API_KEY`, `SEATGEEK_API_KEY`, `RESEND_API_KEY`)
+- Vercel project linked to repo, env vars set (`DATABASE_URL`, future `TICKETMASTER_API_KEY`, `RESEND_API_KEY`)
 - Hello-world page deploys to Vercel
 - **Gate:** D1 passes on a placeholder page.
 
 ### M1 — Ingestion v1 (Tier 1 + Tier 2)
-- Ticketmaster + SeatGeek API clients
+- Ticketmaster API client
 - iCal pullers for the 6 universities + sfjazz/sfsymphony
 - Normalizer (raw → canonical event shape, including `price_display` builder)
 - Dedup logic
