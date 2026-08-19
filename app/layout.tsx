@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { Suspense } from "react";
-import { CitySelector } from "./components/city-selector";
+import { MetroNav } from "./components/metro-nav";
 import { DigestButton } from "./components/digest-button";
 import "./globals.css";
 
@@ -74,7 +74,7 @@ export default function RootLayout({
       <body className="min-h-full flex flex-col bg-zinc-950 text-zinc-100">
         <header className="sticky top-0 z-40 flex h-12 items-center justify-between border-b border-zinc-800/80 bg-zinc-950/80 px-4 backdrop-blur supports-[backdrop-filter]:bg-zinc-950/60 sm:px-6">
           <Suspense fallback={null}>
-            <CitySelector />
+            <MetroNav />
           </Suspense>
           <div data-slot="header-actions" className="flex items-center gap-2">
             <DigestButton />

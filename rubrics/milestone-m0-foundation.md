@@ -18,7 +18,7 @@
 | M0-4 | Missing core deps | `node -e "require('next');require('drizzle-orm');require('postgres')"` | Exits 0 |
 | M0-5 | Schema not parseable | `npx drizzle-kit check` (or `generate` against schema file) | Exits 0; schema compiles |
 | M0-6 | Secrets in git | `git ls-files \| grep -E '\.env$\|\.env\.local$'` | Empty output |
-| M0-7 | .env.example missing keys | grep for each required key in `.env.example` | All 4 keys present (DATABASE_URL, TICKETMASTER_API_KEY, SEATGEEK_API_KEY, RESEND_API_KEY) |
+| M0-7 | .env.example missing keys | grep for each required key in `.env.example` | All 3 keys present (DATABASE_URL, TICKETMASTER_API_KEY, RESEND_API_KEY) |
 | M0-8 | Not pushed to GitHub | `gh repo view --json url` | Returns a URL on origin |
 | M0-9 | Vercel project not linked | `vercel project ls` shows the project, or `.vercel/project.json` exists | Linked |
 | M0-10 | Prod deploy missing | `curl -sI <prod-url>` | HTTP 200 |

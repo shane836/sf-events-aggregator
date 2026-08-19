@@ -20,7 +20,7 @@ export type SourceTier = "api" | "ical" | "scrape";
 
 export type VerificationLevel =
   | "official"        // first-party API or venue-owned feed
-  | "trusted_partner" // Ticketmaster, SeatGeek, university iCal
+  | "trusted_partner" // Ticketmaster, university iCal
   | "community"       // editorial aggregators (Eater, Funcheap)
   | "unverified";     // anything else
 

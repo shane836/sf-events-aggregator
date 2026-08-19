@@ -28,7 +28,6 @@ To fully ship M1 (ingestion v1 — rubric in `rubrics/milestone-m1-ingestion.md`
 | `ical:sfsu` | ical | lectures | events.sfsu.edu (Localist — `/calendar/1.ics`) | trusted_partner |
 | `ical:cca` | ical | lectures | cca.edu/events | trusted_partner |
 | `ticketmaster` | api | varies (use Discovery API classification) | https://developer.ticketmaster.com — needs `TICKETMASTER_API_KEY` from user | trusted_partner |
-| `seatgeek` | api | varies | https://platform.seatgeek.com — needs `SEATGEEK_API_KEY` from user | trusted_partner |
 
 **Plus:**
 - `.github/workflows/ingest.yml` — daily 4am Pacific cron, one job per source matrix-style (M1-13, M1-14)
@@ -73,7 +72,7 @@ Example prompt scaffold:
 
 ## What you (Claude) cannot do without the user
 
-- **`TICKETMASTER_API_KEY`** and **`SEATGEEK_API_KEY`** must be set by the user in `.env.local` (and pushed to Vercel via `vercel env add`). Until then, those two adapters' agents will get 401s on `npm run ingest`. They can still implement + unit-test against fixtures and open a PR; the live ingest just won't work.
+- **`TICKETMASTER_API_KEY`** must be set by the user in `.env.local` (and pushed to Vercel via `vercel env add`). Until then, that adapter's agent will get 401s on `npm run ingest`. It can still implement + unit-test against fixtures and open a PR; the live ingest just won't work.
 - **Merging PRs** — leave that to the user unless they say otherwise. The branches will pile up; that's fine.
 
 ## Repo state

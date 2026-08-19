@@ -108,7 +108,6 @@ No user accounts. No event submissions. A single "email me the upcoming events" 
 | Source | Coverage | Cost | Notes |
 |---|---|---|---|
 | Ticketmaster Discovery API | Large music + comedy venues | Free, 5000 calls/day | Need API key (free signup) |
-| SeatGeek API | Music + sports + some comedy | Free with key | Overlaps with Ticketmaster, catches some extras |
 
 ### Tier 2: iCal / RSS feeds (structured, stable)
 Universities and major venues that publish structured feeds. **Universities are gold — most have ical exports for their public lecture calendars.**
@@ -195,7 +194,7 @@ This is the seed list. We can add/remove before any scraping work starts.
 
 **Note on Food:** This is the hardest category to source. Most popups are announced on Instagram with no structured data. Initial coverage will skew toward recurring markets. Expect to add scrapers (or accept thin coverage) over time.
 
-**Total: ~37 venue/source targets** for the starter set. Plus Ticketmaster + SeatGeek APIs which cover many of the above (and more) opportunistically.
+**Total: ~37 venue/source targets** for the starter set. Plus the Ticketmaster API which covers many of the above (and more) opportunistically.
 
 ---
 
@@ -206,7 +205,7 @@ This is the seed list. We can add/remove before any scraping work starts.
 {
   id: uuid                          // generated
   source_id: string                 // original ID from source
-  source: enum                      // 'ticketmaster' | 'seatgeek' | 'ical:stanford' | 'scrape:cobbs' | ...
+  source: enum                      // 'ticketmaster' | 'ical:stanford' | 'scrape:cobbs' | ...
   source_url: string                // click-through link — REQUIRED on every event
   title: string
   description: text | null
@@ -253,7 +252,6 @@ This is the seed list. We can add/remove before any scraping work starts.
 ┌─────────────────────────────────────────────────────────┐
 │  GitHub Actions (daily 4am PT)                          │
 │  ├── Pull Ticketmaster API                              │
-│  ├── Pull SeatGeek API                                  │
 │  ├── Fetch iCal feeds (universities, venues)            │
 │  ├── Run scrapers (one job per venue)                   │
 │  ├── Normalize → Dedup → Categorize                     │
@@ -446,7 +444,7 @@ Failing Q-checks post to a GitHub Action summary so we see them next morning.
 - **Gate:** D1 passes (build + deploy works on a "hello world" page).
 
 ### Milestone 1: Ingestion v1 — Tier 1 + Tier 2 only (3-5 days)
-- Ticketmaster + SeatGeek API pulls
+- Ticketmaster API pulls
 - 6 university iCal feeds
 - Normalization + dedup logic
 - GitHub Action cron

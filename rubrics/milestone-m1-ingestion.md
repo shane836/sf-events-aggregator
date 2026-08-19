@@ -1,6 +1,6 @@
 # Milestone M1 — Ingestion v1 Rubric
 
-**Purpose:** Verify the daily ingestion pipeline reliably pulls from Tier-1 APIs (Ticketmaster, SeatGeek) and Tier-2 iCal feeds (universities + sfjazz + sfsymphony), normalizes to the canonical schema, deduplicates, and writes to Neon — without crashing and without producing garbage rows.
+**Purpose:** Verify the daily ingestion pipeline reliably pulls from the Tier-1 API (Ticketmaster) and Tier-2 iCal feeds (universities + sfjazz + sfsymphony), normalizes to the canonical schema, deduplicates, and writes to Neon — without crashing and without producing garbage rows.
 
 **Method discipline:** Every dimension is checked by a SQL query, a deterministic script, or an HTTP response code. No "looks reasonable" judgment in this rubric.
 
@@ -10,7 +10,7 @@
 
 ## Sources in scope for M1
 
-- **APIs (Tier-1):** Ticketmaster Discovery, SeatGeek
+- **APIs (Tier-1):** Ticketmaster Discovery
 - **iCal (Tier-2):** Stanford, UC Berkeley, UCSF, USF, SF State, CCA, SF Jazz, SF Symphony (8 feeds)
 
 Tier-3 scrapers belong to M3 and are explicitly OUT OF SCOPE here.
@@ -35,7 +35,7 @@ Tier-3 scrapers belong to M3 and are explicitly OUT OF SCOPE here.
 
 | # | Failure mode | Check | Pass criterion |
 |---|---|---|---|
-| M1-8 | Music category empty | SQL: `select count(*) from events where category='music' and start_time > now() and start_time < now() + interval '30 days'` | ≥ 20 (Ticketmaster + SeatGeek + SF Jazz + SF Symphony) |
+| M1-8 | Music category empty | SQL: `select count(*) from events where category='music' and start_time > now() and start_time < now() + interval '30 days'` | ≥ 20 (Ticketmaster + SF Jazz + SF Symphony) |
 | M1-9 | Lectures category empty | Same SQL, `category='lectures'` | ≥ 10 (6 universities combined) |
 | M1-10 | Comedy category | Same SQL, `category='comedy'` | Partial OK in M1 — Tier-3 scrapers fill this in M3. Document current count; do not gate ship. |
 | M1-11 | Dancing category | Same SQL, `category='dancing'` | Partial OK in M1 — same as above. |
