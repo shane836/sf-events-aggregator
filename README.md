@@ -1,40 +1,81 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# SF Events Aggregator
+
+A San Francisco Bay Area events calendar for music, comedy, lectures, dancing, and food. It collects venue and event listings, stores them in Postgres, and provides calendar views, filters, and email digests.
+
+## Features
+
+- Source adapters for venue calendars, Funcheap, Eventbrite, Ticketmaster, and other sources.
+- Month, week, and day views, an upcoming-events feed, and a mobile agenda.
+- Filters for category, date, city or region, and neighborhood.
+- Email digests through Resend.
+
+Built with Next.js 16, React 19, TypeScript, Tailwind CSS, and Drizzle ORM with Postgres. Source coverage depends on successful ingestion; upstream calendars can change.
+
+## Run locally
+
+Install Node.js and npm, and provide a Postgres database. The environment template describes a Neon pooled connection string.
+
+```sh
+npm ci
+cp .env.example .env.local
+```
+
+Fill in `.env.local`:
+
+| Variable | Purpose |
+|---|---|
+| `DATABASE_URL` | Postgres connection string; required for stored events. |
+| `TICKETMASTER_CONSUMER_KEY` | Ticketmaster Discovery API access for that adapter. |
+| `RESEND_API_KEY` | Email digest delivery. |
+| `DIGEST_SENDER_DOMAIN` | Optional verified Resend sender domain; add it to use your own digest sender. |
+
+Keep credentials in ignored local environment files. Without `DIGEST_SENDER_DOMAIN`, the sender code falls back to Resend's test sender and its delivery restrictions.
+
+```sh
+npm run db:migrate
+npm run dev
+```
+
+Open http://localhost:3000. A new database needs an ingestion run before it contains listings.
+
+## Collect events
+
+```sh
+# Applies migrations, then runs every discovered source adapter.
+npm run ingest:all
+
+# Run one adapter by its filename in lib/sources, without .ts.
+npm run ingest -- ticketmaster
+```
+
+Ingestion reads `.env.local`, contacts upstream sources, and writes to the configured database. The all-source runner reports failed adapters after attempting the remaining sources.
+
+## Checks
+
+```sh
+npm test
+npm run typecheck
+npm run lint
+npx playwright install chromium
+npm run test:e2e
+```
+
+Configure the app and database for checks that exercise them. These commands are defined in the repository; they were not executed during this documentation review.
+
+## Project layout
+
+| Path | Purpose |
+|---|---|
+| `app/` | Calendar pages, components, and events/digest API routes. |
+| `lib/sources/` | Event source adapters. |
+| `ingest/run.ts` | Single-source ingestion entry point. |
+| `scripts/ingest-all.mjs` | Migrations followed by all-source ingestion. |
+| `db/` and `drizzle/` | Database schema and migrations. |
+| `lib/digest/` | Queries, email templates, and Resend delivery. |
+| `tests/`, `eval/`, and `rubrics/` | Automated checks and evaluation material. |
+
+See [DESIGN.md](DESIGN.md) for the visual system and [OPEN-ITEMS.md](OPEN-ITEMS.md) for recorded follow-up work. Runtime provider access and deployment status require separate verification.
 
 ## How this was built
 
-Built with Claude Code, directed and reviewed by me.
-
-## Getting Started
-
-First, run the development server:
-
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
-
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
-
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
-
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Built with Claude Code, directed and reviewed by the project owner. Documentation reviewed with OpenAI Codex assistance.
