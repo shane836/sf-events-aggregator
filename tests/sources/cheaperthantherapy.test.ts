@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import adapter, { parseNinkashiEvent } from "@/lib/sources/cheaperthantherapy";
 import type { Provenance, RawEvent } from "@/lib/sources/types";
 
@@ -8,6 +8,26 @@ const fetchedAt = new Date("2026-05-25T00:00:00Z");
 // A frozen "now" earlier than every fixture event so the past-event filter
 // (D6) lets fixture rows through deterministically.
 const now = new Date("2026-05-25T00:00:00Z");
+
+describe("Cheaper Than Therapy API response contract", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("reads the current events envelope and deduplicates source IDs", async () => {
+    const show = { id: 9999, title: "Future show", event_dates_attributes: [{ starts_at: "2099-06-10T02:45:00Z" }] };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ events: [show, show] })));
+    const result = await adapter.fetch();
+    expect(result.errors).toEqual([]);
+    expect(result.events).toHaveLength(1);
+    expect(result.events[0].identity.externalId).toBe("9999");
+  });
+
+  it("reports a malformed envelope instead of claiming an empty success", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ events: null })));
+    const result = await adapter.fetch();
+    expect(result.events).toEqual([]);
+    expect(result.errors).toEqual([expect.objectContaining({ stage: "parse", retryable: false })]);
+  });
+});
 
 const sample: RawEvent = {
   identity: {

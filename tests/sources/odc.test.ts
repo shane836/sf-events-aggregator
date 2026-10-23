@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import adapter, {
   buildStartUtc,
   parseMonthDay,
@@ -8,6 +8,30 @@ import type { Provenance, RawEvent } from "@/lib/sources/types";
 
 const fetchedAt = new Date("2026-05-25T00:00:00Z");
 
+describe("ODC calendar response contract", () => {
+  afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
+
+  it("uses the current calendar URL and deduplicates responsive cards", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-19T12:00:00Z"));
+    const card = `<div class="table-calendar__item"><div class="date"><h4>10/25</h4></div><ul class="list future"><li><a href="https://odc.dance/show">Dance show</a><time>7:30PM</time></li></ul></div>`;
+    const request = vi.fn().mockResolvedValue(new Response(card + card));
+    vi.stubGlobal("fetch", request);
+    const result = await adapter.fetch();
+    expect(request).toHaveBeenCalledWith("https://odc.dance/calendar", expect.any(Object));
+    expect(result.errors).toEqual([]);
+    expect(result.events).toHaveLength(1);
+    expect(result.events[0].startTimeUtc.toISOString()).toBe("2026-10-26T02:30:00.000Z");
+  });
+
+  it("reports unexpected listing markup rather than an empty success", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("<html><h1>New website</h1></html>")));
+    const result = await adapter.fetch();
+    expect(result.events).toEqual([]);
+    expect(result.errors).toEqual([expect.objectContaining({ stage: "parse", retryable: false })]);
+  });
+});
+
 const sample: RawEvent = {
   identity: {
     source: "scrape:odc",
@@ -16,7 +40,6 @@ const sample: RawEvent = {
   },
   // identity.sourceUrl filled below for clarity
   // (placed inline so the spread below doesn't trip ts-noUncheckedIndexedAccess)
-  // eslint-disable-next-line
   title: "RAWdance: CONCEPT series #21",
   description: null,
   startTimeUtc: new Date("2026-05-29T02:30:00Z"), // 7:30PM PT on 5/28

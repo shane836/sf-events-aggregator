@@ -12,9 +12,7 @@ test.describe("B. upcoming feed", () => {
   test("B1: feed section exists on home", async ({ page }) => {
     await page.goto("/");
     await expect(page.locator('[data-section="upcoming-feed"]')).toBeVisible();
-    await expect(page.locator("[data-feed-header]")).toContainText(
-      /upcoming fun/i,
-    );
+    await expect(page.locator("[data-feed-header]")).toHaveText("Upcoming Events");
   });
 
   test("B2: feed rows are in chronological order (strictly non-decreasing)", async ({

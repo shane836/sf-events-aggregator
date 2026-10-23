@@ -1,11 +1,18 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import adapter, { mapEvent, slugify } from "@/lib/sources/offthegrid";
 import type { Provenance, RawEvent } from "@/lib/sources/types";
 
 const TZ = "America/Los_Angeles";
 const fetchedAt = new Date("2026-05-25T00:00:00Z");
+
+// Keep the adapter's Date.now() cutoff aligned with these captured fixtures.
+beforeEach(() => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(fetchedAt);
+});
+afterEach(() => vi.useRealTimers());
 
 const sample: RawEvent = {
   identity: {
@@ -213,8 +220,7 @@ describe("Off the Grid fixture regression", () => {
     const events = payload?.data?.events ?? [];
     expect(events.length).toBeGreaterThan(0);
 
-    // Map every event with a far-future fetchedAt so D6 doesn't drop the
-    // fixture's now-historical dates (the fixture was captured 2026-05-24).
+    // Preserve the fixture's capture date; the frozen clock keeps D6 stable.
     const fixtureFetchedAt = new Date("2026-05-24T00:00:00Z");
     const mapped = events
       .map((e) => mapEvent(e, fixtureFetchedAt))
