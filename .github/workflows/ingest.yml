@@ -14,6 +14,11 @@ on:
   schedule:
     - cron: "0 11 * * *"
   workflow_dispatch:
+    inputs:
+      source:
+        description: "Adapter name for a single-source rollout; leave blank for all"
+        required: false
+        type: string
 
 concurrency:
   group: ingest-${{ github.workflow }}
@@ -28,8 +33,17 @@ jobs:
       - uses: actions/checkout@v4
       - id: find
         name: Discover source adapters
+        env:
+          REQUESTED_SOURCE: ${{ inputs.source }}
         run: |
           sources=$(ls lib/sources/*.ts | xargs -n1 basename -s .ts | grep -v '^types$' | jq -R -s -c 'split("\n")[:-1]')
+          if [ -n "$REQUESTED_SOURCE" ]; then
+            if ! jq -e --arg name "$REQUESTED_SOURCE" 'index($name) != null' <<< "$sources" > /dev/null; then
+              echo '::error::Requested source is not a registered adapter'
+              exit 1
+            fi
+            sources=$(jq -cn --arg name "$REQUESTED_SOURCE" '[$name]')
+          fi
           echo "Discovered sources: $sources"
           echo "sources=$sources" >> "$GITHUB_OUTPUT"
 
@@ -79,8 +93,8 @@ jobs:
           set -o pipefail
           echo "## ${{ matrix.source }}" >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
-          npx tsx ingest/run.ts "${{ matrix.source }}" 2>&1 | tee -a "$GITHUB_STEP_SUMMARY"
-          status=${PIPESTATUS[0]}
+          status=0
+          npx tsx ingest/run.ts "${{ matrix.source }}" 2>&1 | tee -a "$GITHUB_STEP_SUMMARY" || status=$?
           echo '```' >> "$GITHUB_STEP_SUMMARY"
           echo "Exit code: $status" >> "$GITHUB_STEP_SUMMARY"
           exit "$status"

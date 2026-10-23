@@ -12,7 +12,7 @@ import type {
 /**
  * ODC Theater calendar scraper.
  *
- * Site: https://odc.dance/calendar/events (Drupal-backed listing page)
+ * Site: https://odc.dance/calendar (Drupal-backed listing page)
  *
  * Approach: CSS selectors over the `.table-calendar__item` blocks. Each block
  * has a `<h4>M/D</h4>` date and a `<ul class="list future|past">` of events;
@@ -29,7 +29,7 @@ import type {
  */
 
 const ID = "scrape:odc";
-const LISTING_URL = "https://odc.dance/calendar/events";
+const LISTING_URL = "https://odc.dance/calendar";
 const TZ = "America/Los_Angeles";
 const VENUE_NAME = "ODC Theater";
 const VENUE_ADDRESS = "3153 17th St, San Francisco, CA 94110";
@@ -48,6 +48,11 @@ const adapter: SourceAdapter = {
 
     try {
       const { $ } = await fetchHtml(LISTING_URL);
+      if ($(".table-calendar__item").length === 0) {
+        errors.push({ source: ID, stage: "parse", message: `calendar markup missing at ${LISTING_URL}`, retryable: false, occurredAt: new Date() });
+        return { events, errors, fetchedAt };
+      }
+      const seen = new Set<string>();
 
       $(".table-calendar__item").each((_, item) => {
         const $item = $(item);
@@ -75,6 +80,8 @@ const adapter: SourceAdapter = {
           if (startUtc.getTime() < now.getTime() - 6 * 60 * 60 * 1000) return;
 
           const externalId = makeExternalId(href, startUtc);
+          if (seen.has(externalId)) return;
+          seen.add(externalId);
 
           events.push({
             identity: {

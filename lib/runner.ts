@@ -1,5 +1,6 @@
 import type {
   Provenance,
+  FetchResult,
   SourceAdapter,
   SourceError,
 } from "@/lib/sources/types";
@@ -9,6 +10,7 @@ const PIPELINE_VERSION = "m1-v2";
 
 export type SourceResult = {
   source: string;
+  status: "completed" | "partial" | "failed";
   startedAt: string;
   finishedAt: string;
   durationMs: number;
@@ -16,10 +18,46 @@ export type SourceResult = {
   fetched: number;
   inserted: number;
   updatedHigher: number;
+  updatedSameSource: number;
   appendedSecondary: number;
   skippedLower: number;
   errors: SourceError[];
 };
+
+function databaseCause(error: unknown): { code: string; constraint?: string } | undefined {
+  let current = error;
+  const seen = new Set<unknown>();
+  while (current && typeof current === "object" && !seen.has(current)) {
+    seen.add(current);
+    const value = current as { code?: unknown; constraint_name?: unknown; cause?: unknown };
+    if (typeof value.code === "string" && /^[A-Z0-9]{5}$/.test(value.code)) {
+      return {
+        code: value.code,
+        ...(typeof value.constraint_name === "string" && /^[a-zA-Z0-9_]+$/.test(value.constraint_name)
+          ? { constraint: value.constraint_name } : {}),
+      };
+    }
+    current = value.cause;
+  }
+}
+
+async function fetchWithRetry(adapter: SourceAdapter, cursor?: string): Promise<FetchResult> {
+  for (let attempt = 0; ; attempt++) {
+    let page: FetchResult;
+    try {
+      page = await adapter.fetch(cursor);
+    } catch (error) {
+      page = { events: [], fetchedAt: new Date(), errors: [{ source: adapter.id, stage: "fetch", message: error instanceof Error ? error.message : String(error), retryable: true, occurredAt: new Date() }] };
+    }
+    const retryable = page.errors.length > 0 && page.errors.every(error => {
+      const status = error.httpStatus ?? Number(error.message.match(/\bHTTP (\d{3})\b/)?.[1]);
+      return error.stage === "fetch" && error.retryable && (!status || status >= 500 || status === 408 || status === 429);
+    });
+    if (page.events.length > 0 || !retryable || attempt >= 2) return page;
+    console.warn(JSON.stringify({ source: adapter.id, retry: attempt + 1, errors: page.errors }));
+    await new Promise(resolve => setTimeout(resolve, 1000 * 2 ** attempt));
+  }
+}
 
 /**
  * Drive an adapter end-to-end: paginate via adapter.fetch(cursor),
@@ -37,6 +75,7 @@ export async function runAdapter(
   let fetched = 0;
   let inserted = 0;
   let updatedHigher = 0;
+  let updatedSameSource = 0;
   let appendedSecondary = 0;
   let skippedLower = 0;
   let pages = 0;
@@ -46,8 +85,11 @@ export async function runAdapter(
   try {
     do {
       pages++;
-      const page = await adapter.fetch(cursor);
+      const page = await fetchWithRetry(adapter, cursor);
       errors.push(...page.errors);
+      if (page.partial && page.errors.length === 0) {
+        errors.push({ source: adapter.id, stage: "fetch", message: "adapter returned incomplete results", retryable: false, occurredAt: new Date() });
+      }
 
       const provenance: Provenance = {
         adapterId: adapter.id,
@@ -58,8 +100,14 @@ export async function runAdapter(
 
       for (const raw of page.events) {
         fetched++;
+        let normalized;
         try {
-          const normalized = adapter.normalize(raw, provenance);
+          normalized = adapter.normalize(raw, provenance);
+        } catch (error) {
+          errors.push({ source: adapter.id, externalId: raw.identity.externalId, stage: "normalize", message: error instanceof Error ? error.message : String(error), retryable: false, occurredAt: new Date() });
+          continue;
+        }
+        try {
           const outcome = await persistEvent(normalized);
           switch (outcome.status) {
             case "inserted":
@@ -67,6 +115,9 @@ export async function runAdapter(
               break;
             case "updated_higher_verification":
               updatedHigher++;
+              break;
+            case "updated_same_source":
+              updatedSameSource++;
               break;
             case "appended_secondary":
               appendedSecondary++;
@@ -76,12 +127,16 @@ export async function runAdapter(
               break;
           }
         } catch (err) {
+          const cause = databaseCause(err);
+          const message = err instanceof Error ? err.message : String(err);
           errors.push({
             source: adapter.id,
             externalId: raw.identity.externalId,
             stage: "persist",
-            message: err instanceof Error ? err.message : String(err),
-            retryable: false,
+            message: cause ? `database error ${cause.code}${cause.constraint ? ` (${cause.constraint})` : ""}`
+              : message.startsWith("Failed query:") ? "database query failed (no PostgreSQL error code available)" : message,
+            cause,
+            retryable: cause != null && (cause.code.startsWith("08") || ["40001", "40P01", "55P03", "57014", "57P01"].includes(cause.code)),
             occurredAt: new Date(),
           });
         }
@@ -100,8 +155,11 @@ export async function runAdapter(
   }
 
   const finishedAt = new Date();
+  const processed = inserted + updatedHigher + updatedSameSource + appendedSecondary + skippedLower;
+  const status = errors.length === 0 ? "completed" : processed > 0 ? "partial" : "failed";
   const result: SourceResult = {
     source: adapter.id,
+    status,
     startedAt: startedAt.toISOString(),
     finishedAt: finishedAt.toISOString(),
     durationMs: finishedAt.getTime() - startedAt.getTime(),
@@ -109,13 +167,13 @@ export async function runAdapter(
     fetched,
     inserted,
     updatedHigher,
+    updatedSameSource,
     appendedSecondary,
     skippedLower,
     errors,
   };
 
-  const fatal = errors.length > 0 && inserted === 0 && updatedHigher === 0;
-  await completeRun(runId, fatal ? "failed" : "completed", {
+  await completeRun(runId, status, {
     fetched,
     inserted,
     skipped: appendedSecondary + skippedLower,

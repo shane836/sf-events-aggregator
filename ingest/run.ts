@@ -23,7 +23,7 @@ async function main() {
   }
 
   const result = await runAdapter(mod.default);
-  process.exit(result.errors.length > 0 && result.inserted === 0 ? 1 : 0);
+  process.exit(result.status === "completed" ? 0 : 1);
 }
 
 main().catch((err) => {

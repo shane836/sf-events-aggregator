@@ -264,11 +264,14 @@ const adapter: SourceAdapter = {
       }
 
       const payload = (await resp.json()) as unknown;
-      if (!Array.isArray(payload)) {
+      const shows = payload !== null && typeof payload === "object" && "events" in payload
+        ? payload.events
+        : undefined;
+      if (!Array.isArray(shows)) {
         errors.push({
           source: ID,
           stage: "parse",
-          message: `expected JSON array from ${API_URL}, got ${typeof payload}`,
+          message: `expected an events array in the JSON response from ${API_URL}`,
           retryable: false,
           occurredAt: new Date(),
         });
@@ -276,7 +279,7 @@ const adapter: SourceAdapter = {
       }
 
       const seen = new Set<string>();
-      for (const node of payload) {
+      for (const node of shows) {
         try {
           const ev = parseNinkashiEvent(node as NinkashiEvent, fetchedAt);
           if (!ev) continue;

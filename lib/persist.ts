@@ -13,9 +13,9 @@ import type {
  * Sole writer for events + venues. No other module imports db/client for
  * writes — that invariant is checked in the M1-v2 rubric (C1).
  *
- * Concurrency: race-safe via Postgres unique indexes
- * (venues.normalized_name, events.canonical_fingerprint). Parallel runner
- * processes do not need application-level locking.
+ * Each event write is transactional. A transaction-scoped advisory lock
+ * serializes matching identities across ingestion processes; both unique
+ * indexes remain the final guard against other writers.
  */
 
 const VERIFICATION_RANK: Record<VerificationLevel, number> = {
@@ -27,14 +27,17 @@ const VERIFICATION_RANK: Record<VerificationLevel, number> = {
 
 export type PersistOutcome =
   | { status: "inserted"; id: string }
+  | { status: "updated_same_source"; id: string }
   | { status: "updated_higher_verification"; id: string }
   | { status: "appended_secondary"; id: string }
   | { status: "skipped_lower_verification"; id: string };
 
-async function upsertVenue(v: VenueCandidate): Promise<string> {
+type PersistenceTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+async function upsertVenue(tx: PersistenceTransaction, v: VenueCandidate): Promise<string> {
   const normalized = normalizeVenueName(v.name);
 
-  const inserted = await db
+  const inserted = await tx
     .insert(venues)
     .values({
       normalizedName: normalized,
@@ -64,7 +67,7 @@ async function upsertVenue(v: VenueCandidate): Promise<string> {
   if (inserted.length === 0) {
     // ON CONFLICT DO UPDATE with no actual change returns nothing on older PG;
     // fall back to a SELECT.
-    const existing = await db
+    const existing = await tx
       .select({ id: venues.id })
       .from(venues)
       .where(sql`${venues.normalizedName} = ${normalized}`)
@@ -80,148 +83,157 @@ async function upsertVenue(v: VenueCandidate): Promise<string> {
 }
 
 /**
- * Insert or merge an event using the verification-level winner rule.
- *
- *   - canonical_fingerprint match + higher level → UPDATE all fields,
- *     append loser to secondary_sources
- *   - match + equal/lower level → DO NOT update; append THIS row to
- *     secondary_sources of the existing row
- *   - no match → INSERT
+ * Source identity survives title/time/venue edits. Cross-source matches still
+ * follow verification rank. Conflicting existing rows require manual review;
+ * this writer never deletes or automatically combines those rows.
  */
 export async function persistEvent(
   e: NormalizedEvent,
 ): Promise<PersistOutcome> {
-  const venueId = await upsertVenue(e.venue);
+  return db.transaction(async (tx) => {
+    // Lock both identities, including ones not yet present. A consistent order
+    // avoids lock cycles; unrelated events can still ingest concurrently.
+    await tx.execute(sql`set local lock_timeout = '10s'`);
+    await tx.execute(sql`set local statement_timeout = '30s'`);
+    const lockKeys = [
+      `canonical:${e.canonicalFingerprint}`,
+      `source:${JSON.stringify([e.identity.source, e.identity.externalId])}`,
+    ].sort();
+    for (const key of lockKeys) {
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${key}, 0))`);
+    }
 
-  // Fast-path: check if a row already exists for this fingerprint
-  const existing = await db
-    .select({
-      id: events.id,
-      verificationLevel: events.verificationLevel,
-      secondarySources: events.secondarySources,
-    })
-    .from(events)
-    .where(sql`${events.canonicalFingerprint} = ${e.canonicalFingerprint}`)
-    .limit(1);
-
-  const incomingRank = VERIFICATION_RANK[e.verificationLevel];
-
-  if (existing.length === 0) {
-    // No conflict — straight insert.
-    const inserted = await db
-      .insert(events)
-      .values({
-        source: e.identity.source,
-        externalId: e.identity.externalId,
-        sourceUrl: e.identity.sourceUrl,
-        sourceVersion: e.identity.sourceVersion ?? null,
-        title: e.title,
-        description: e.description,
-        category: e.category,
-        startTimeUtc: e.startTimeUtc,
-        endTimeUtc: e.endTimeUtc,
-        timezone: e.timezone,
-        venueId,
-        priceMin: e.pricing.priceMin != null ? e.pricing.priceMin.toString() : null,
-        priceMax: e.pricing.priceMax != null ? e.pricing.priceMax.toString() : null,
-        isFree: e.pricing.isFree ?? false,
-        seriesId: e.recurrence?.seriesId ?? null,
-        occurrenceId: e.recurrence?.occurrenceId ?? null,
-        canonicalFingerprint: e.canonicalFingerprint,
-        verificationLevel: e.verificationLevel,
-        secondarySources: [],
-        provenance: e.provenance as unknown as object,
-        rawPayload: e.rawPayload as unknown as object,
+    const matches = await tx
+      .select({
+        id: events.id,
+        source: events.source,
+        externalId: events.externalId,
+        sourceUrl: events.sourceUrl,
+        canonicalFingerprint: events.canonicalFingerprint,
+        verificationLevel: events.verificationLevel,
+        secondarySources: events.secondarySources,
       })
-      .onConflictDoNothing({ target: events.canonicalFingerprint })
-      .returning({ id: events.id });
+      .from(events)
+      .where(sql`
+        (${events.source} = ${e.identity.source} and ${events.externalId} = ${e.identity.externalId})
+        or ${events.canonicalFingerprint} = ${e.canonicalFingerprint}
+        or ${events.secondarySources} @> ${JSON.stringify([{ source: e.identity.source, externalId: e.identity.externalId }])}::jsonb
+      `)
+      .orderBy(events.id)
+      .for("update");
 
-    if (inserted.length > 0) return { status: "inserted", id: inserted[0].id };
-    // Lost the race to another writer — re-read and treat as conflict path.
-    return persistEvent(e);
-  }
+    if (matches.length > 1) {
+      throw new Error(
+        `identity_conflict: ${e.identity.source}/${e.identity.externalId} matches multiple events; manual review required`,
+      );
+    }
 
-  const existingRank = VERIFICATION_RANK[existing[0].verificationLevel as VerificationLevel] ?? 0;
-  const existingSecondaries = (existing[0].secondarySources as SecondarySource[]) ?? [];
+    const existing = matches[0];
+    const sameSource = existing?.source === e.identity.source && existing?.externalId === e.identity.externalId;
+    if (existing && !sameSource && existing.canonicalFingerprint !== e.canonicalFingerprint) {
+      throw new Error(
+        `identity_conflict: secondary ${e.identity.source}/${e.identity.externalId} changed fingerprint; manual review required`,
+      );
+    }
 
-  const thisAsSecondary: SecondarySource = {
-    source: e.identity.source,
-    externalId: e.identity.externalId,
-    sourceUrl: e.identity.sourceUrl,
-    verificationLevel: e.verificationLevel,
-    observedAt: new Date(),
-  };
+    const incomingRank = VERIFICATION_RANK[e.verificationLevel];
+    const existingRank = existing
+      ? VERIFICATION_RANK[existing.verificationLevel as VerificationLevel] ?? 0
+      : -1;
+    if (sameSource && incomingRank < existingRank) {
+      return { status: "skipped_lower_verification", id: existing.id };
+    }
 
-  if (incomingRank > existingRank) {
-    // Higher verification wins. Overwrite primary fields, push old primary
-    // into secondary_sources alongside this run's prior secondaries.
-    const newSecondaries: SecondarySource[] = [
-      ...existingSecondaries,
-      // We don't have the old primary's source_url at hand without a second
-      // query; we accept that the old primary's externalId stays as the row's
-      // canonical source until next time it shows up as a secondary.
-    ];
-    await db
-      .update(events)
-      .set({
-        source: e.identity.source,
-        externalId: e.identity.externalId,
-        sourceUrl: e.identity.sourceUrl,
-        sourceVersion: e.identity.sourceVersion ?? null,
-        title: e.title,
-        description: e.description,
-        category: e.category,
-        startTimeUtc: e.startTimeUtc,
-        endTimeUtc: e.endTimeUtc,
-        timezone: e.timezone,
-        venueId,
-        priceMin: e.pricing.priceMin != null ? e.pricing.priceMin.toString() : null,
-        priceMax: e.pricing.priceMax != null ? e.pricing.priceMax.toString() : null,
-        isFree: e.pricing.isFree ?? false,
-        seriesId: e.recurrence?.seriesId ?? null,
-        occurrenceId: e.recurrence?.occurrenceId ?? null,
-        verificationLevel: e.verificationLevel,
-        secondarySources: newSecondaries,
-        provenance: e.provenance as unknown as object,
-        rawPayload: e.rawPayload as unknown as object,
-        ingestedAt: new Date(),
-      })
-      .where(sql`${events.id} = ${existing[0].id}`);
-    return { status: "updated_higher_verification", id: existing[0].id };
-  }
+    // Resolve the venue only after identity checks. All writes roll back if a
+    // later constraint fails, including venue enrichment.
+    const venueId = await upsertVenue(tx, e.venue);
+    const values = {
+      source: e.identity.source,
+      externalId: e.identity.externalId,
+      sourceUrl: e.identity.sourceUrl,
+      sourceVersion: e.identity.sourceVersion ?? null,
+      title: e.title,
+      description: e.description,
+      category: e.category,
+      startTimeUtc: e.startTimeUtc,
+      endTimeUtc: e.endTimeUtc,
+      timezone: e.timezone,
+      venueId,
+      priceMin: e.pricing.priceMin != null ? e.pricing.priceMin.toString() : null,
+      priceMax: e.pricing.priceMax != null ? e.pricing.priceMax.toString() : null,
+      isFree: e.pricing.isFree ?? false,
+      seriesId: e.recurrence?.seriesId ?? null,
+      occurrenceId: e.recurrence?.occurrenceId ?? null,
+      canonicalFingerprint: e.canonicalFingerprint,
+      verificationLevel: e.verificationLevel,
+      provenance: e.provenance as unknown as object,
+      rawPayload: e.rawPayload as unknown as object,
+    };
 
-  // Equal or lower verification: append THIS row as a secondary if it isn't
-  // already there. Dedupe by (source, externalId).
-  const alreadyTracked = existingSecondaries.some(
-    (s) =>
-      s.source === thisAsSecondary.source &&
-      s.externalId === thisAsSecondary.externalId,
-  );
-  if (alreadyTracked) {
-    return { status: "skipped_lower_verification", id: existing[0].id };
-  }
-  await db
-    .update(events)
-    .set({
-      secondarySources: [...existingSecondaries, thisAsSecondary],
-    })
-    .where(sql`${events.id} = ${existing[0].id}`);
-  return { status: "appended_secondary", id: existing[0].id };
+    if (!existing) {
+      const [inserted] = await tx.insert(events).values({ ...values, secondarySources: [] }).returning({ id: events.id });
+      return { status: "inserted", id: inserted.id };
+    }
+
+    const secondaries = (existing.secondarySources as SecondarySource[]) ?? [];
+    if (sameSource || incomingRank > existingRank) {
+      // Drop legacy self-attribution. If the primary changes, retain the old
+      // primary exactly once and remove the incoming primary from secondaries.
+      const retained = secondaries.filter(s =>
+        !(s.source === e.identity.source && s.externalId === e.identity.externalId),
+      );
+      if (!sameSource && !retained.some(s => s.source === existing.source && s.externalId === existing.externalId)) {
+        retained.push({
+          source: existing.source,
+          externalId: existing.externalId,
+          sourceUrl: existing.sourceUrl,
+          verificationLevel: existing.verificationLevel as VerificationLevel,
+          observedAt: new Date(),
+        });
+      }
+      await tx.update(events).set({ ...values, secondarySources: retained, ingestedAt: new Date() })
+        .where(sql`${events.id} = ${existing.id}`);
+      return { status: sameSource ? "updated_same_source" : "updated_higher_verification", id: existing.id };
+    }
+
+    if (secondaries.some(s => s.source === e.identity.source && s.externalId === e.identity.externalId)) {
+      return { status: "skipped_lower_verification", id: existing.id };
+    }
+    const secondary: SecondarySource = {
+      source: e.identity.source,
+      externalId: e.identity.externalId,
+      sourceUrl: e.identity.sourceUrl,
+      verificationLevel: e.verificationLevel,
+      observedAt: new Date(),
+    };
+    await tx.update(events).set({ secondarySources: [...secondaries, secondary] })
+      .where(sql`${events.id} = ${existing.id}`);
+    return { status: "appended_secondary", id: existing.id };
+  });
 }
 
 /* ---------- ingestion_runs helpers ---------- */
 
 export async function startRun(source: string): Promise<string> {
-  const [row] = await db
-    .insert(ingestionRuns)
-    .values({ source, status: "running" })
-    .returning({ id: ingestionRuns.id });
-  return row.id;
+  return db.transaction(async tx => {
+    const now = new Date();
+    const staleError = JSON.stringify([{ source, stage: "persist", message: "run exceeded 24 hours without completion; marked stale", retryable: false, occurredAt: now }]);
+    await tx.update(ingestionRuns).set({
+      status: "failed",
+      completedAt: now,
+      errorCount: sql`${ingestionRuns.errorCount} + 1`,
+      errors: sql`coalesce(${ingestionRuns.errors}, '[]'::jsonb) || ${staleError}::jsonb`,
+    }).where(sql`${ingestionRuns.source} = ${source} and ${ingestionRuns.status} = 'running' and ${ingestionRuns.startedAt} < now() - interval '24 hours'`);
+    const [row] = await tx.insert(ingestionRuns)
+      .values({ source, status: "running" })
+      .returning({ id: ingestionRuns.id });
+    return row.id;
+  });
 }
 
 export async function completeRun(
   runId: string,
-  status: "completed" | "failed",
+  status: "completed" | "partial" | "failed",
   stats: {
     fetched?: number;
     inserted?: number;

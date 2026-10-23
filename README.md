@@ -78,4 +78,4 @@ See [DESIGN.md](DESIGN.md) for the visual system and [OPEN-ITEMS.md](OPEN-ITEMS.
 
 ## How this was built
 
-Built with Claude Code, directed and reviewed by the project owner. Documentation reviewed with OpenAI Codex assistance.
+Built with Claude Code and OpenAI Codex, directed and reviewed by the project owner.
