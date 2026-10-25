@@ -22,7 +22,9 @@ async function main() {
     process.exit(2);
   }
 
-  const result = await runAdapter(mod.default);
+  const result = await runAdapter(mod.default, {
+    concurrency: name === "ticketmaster" ? 4 : 1,
+  });
   process.exit(result.status === "completed" ? 0 : 1);
 }
 

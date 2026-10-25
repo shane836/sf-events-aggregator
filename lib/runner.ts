@@ -67,7 +67,12 @@ async function fetchWithRetry(adapter: SourceAdapter, cursor?: string): Promise<
  */
 export async function runAdapter(
   adapter: SourceAdapter,
+  options: { concurrency?: number } = {},
 ): Promise<SourceResult> {
+  const concurrency = options.concurrency ?? 1;
+  if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > 4) {
+    throw new Error("concurrency must be an integer from 1 to 4");
+  }
   const startedAt = new Date();
   const runId = await startRun(adapter.id);
 
@@ -98,14 +103,14 @@ export async function runAdapter(
         normalizedAt: new Date(),
       };
 
-      for (const raw of page.events) {
+      const processEvent = async (raw: FetchResult["events"][number]) => {
         fetched++;
         let normalized;
         try {
           normalized = adapter.normalize(raw, provenance);
         } catch (error) {
           errors.push({ source: adapter.id, externalId: raw.identity.externalId, stage: "normalize", message: error instanceof Error ? error.message : String(error), retryable: false, occurredAt: new Date() });
-          continue;
+          return;
         }
         try {
           const outcome = await persistEvent(normalized);
@@ -140,6 +145,11 @@ export async function runAdapter(
             occurredAt: new Date(),
           });
         }
+      };
+      // Ticketmaster deduplicates source IDs before returning a page. Keep
+      // other adapters sequential unless they explicitly opt into this bound.
+      for (let offset = 0; offset < page.events.length; offset += concurrency) {
+        await Promise.all(page.events.slice(offset, offset + concurrency).map(processEvent));
       }
       lastCursor = page.nextCursor;
       cursor = lastCursor ?? undefined;

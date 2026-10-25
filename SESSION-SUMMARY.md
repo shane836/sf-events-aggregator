@@ -1,3 +1,103 @@
+# Follow-up repairs and standalone monitoring — October 24, 2026
+
+**Publication update:** Shane explicitly authorized committing the prepared
+changes and publishing the monitor as a private repository. Its remote is
+https://github.com/shane836/ingestion-monitor. App tests are committed separately
+from implementation. This approval does not apply the production cleanup or
+activate monitoring; hosting, email and agent credentials remain unconfigured.
+The readiness statements below describe the pre-publication checkpoint.
+
+Shane authorized continuing the ingestion fixes and requested a portable monitoring
+microservice shared with CRE Radar. Monitoring cadence: **one API/content check
+and one browser check daily initially**. GitHub Actions should run an isolated
+repair attempt and email a review request before any commit. No commit, push,
+deployment, production ingestion dispatch, or production data cleanup occurred.
+
+## Prepared app fixes
+
+- Today's production workflow used `1d8d862`: 20 sources passed, four failed
+  (Eventbrite, Spark Social, Freight, Independent), and Ticketmaster was cancelled
+  at its 15-minute job limit. Run: https://github.com/shane836/sf-events-aggregator/actions/runs/40101571969.
+- Ticketmaster now opts into four concurrent persistence operations; all other
+  sources remain sequential. Concurrency is bounded/validated, fetch requests have
+  20-second deadlines, body timeouts are classified as fetch failures, and its job
+  gets a 30-minute ceiling. A real read-only upstream fetch followed by localhost
+  persistence processed **2,122 events in 17.154 seconds, zero errors**. This does
+  not measure GitHub-to-Neon latency or prove a production canary passed.
+- Freight now uses the public, unauthenticated JSON endpoint published by its
+  official Tessitura ticketing calendar. No challenge bypass. Stable performance
+  IDs replace time-derived IDs; malformed records surface parse errors. Off-site
+  ticket destinations are excluded rather than assigned to Freight's venue. Two
+  localhost runs inserted then refreshed **128 events**; the final run had zero
+  errors. The earlier HTML parser and its obsolete fixture assertions were
+  replaced with the JSON contract tests and a captured fixture.
+- Independent's nine errors are existing duplicate official/Ticketmaster pairs.
+  `scripts/reconcile-independent.sql` preserves the official IDs and distinct
+  attributions and retires nine duplicate Ticketmaster IDs. It ends in ROLLBACK.
+  Synthetic rehearsal: 18 rows -> nine winners, both attribution sets retained;
+  default rollback and changed-data refusal verified. Read-only production checks
+  found **nine eligible pairs and zero extra attributions**. Applying it requires
+  a fresh recovery point and explicit approval; old direct links to retired IDs
+  would expire. Run Independent after cleanup to refresh titles/times.
+- Eventbrite/Spark runner-specific access remains unresolved. Fresh local fetches
+  returned **32 Eventbrite and three Spark events**, both without errors. Do not treat local success as proof
+  that GitHub's HTTP 405 problem is repaired.
+
+## Standalone monitor
+
+Created **`../ingestion-monitor`**, a separate local Git repository on `main`,
+without a commit or remote. Its README is the operating guide. It has its own npm
+package, lockfile, Dockerfile, Compose file, HTTP service, durable incident state,
+tests, per-project configuration, and GitHub repair/review workflow.
+
+- Configurations cover SF Events' API/browser/Actions ingestion and CRE Radar's
+  static site/browser plus a per-project heartbeat receiver. Read CRE's AGENTS.md
+  and README; it runs ingestion via launchd and must retain one SQLite writer and
+  no runtime model/API key. No CRE files were changed. Its heartbeat sender is not
+  wired yet; the monitor correctly reports a missing heartbeat.
+- Authenticated `/run` and `/status`; separate project tokens for `/heartbeats`;
+  public `/health` reveals only service health. Daily cycles, seven-day repeated
+  incident cooldown, one repair dispatch per project per day, atomic state file
+  on a Docker volume. Run only one replica.
+- Repair dispatch is disabled until configured. The workflow resolves an exact
+  target SHA, runs Codex without production or repository write credentials, then
+  validates its bounded patch on a fresh runner and emails through Resend. It
+  excludes credentials, workflows, dependencies and schema changes. No automatic
+  staging/commit/push/merge/deploy. Empty patches mean diagnosis only.
+- Both public sites passed real checks from macOS and from the built standalone
+  Linux container. It correctly flagged the five unhealthy SF ingestion jobs and
+  CRE's absent heartbeat. Expected check exit 1 reflects these actual incidents.
+- **Eight monitor tests passed**, including real localhost auth/heartbeat/state
+  checks. Container built successfully. Both monitor workflows and the app's
+  ingestion workflow passed Actionlint 1.7.12 and YAML parsing.
+- Not activated: no host, private remote repository, GitHub agent API key, alert
+  recipient/verified sender, or CRE heartbeat integration has been configured.
+  Shane was asked asynchronously for the alert address. Do not request keys in
+  chat; use the ignored service `.env` and GitHub secrets. Checkly is optional;
+  no subscription has been provisioned. Its free plan covers this cadence.
+
+## Validation and release boundary
+
+- Full ingestion selection with fresh localhost PostgreSQL: **382 passed**.
+- Final focused runner/Ticketmaster/Freight tests after the last edits:
+  **47 passed**. Tests were written and seen failing before each repair.
+- TypeScript and production build passed. Initial sandboxed build could not fetch
+  Google Fonts; rerun with network access passed. Existing Open Graph Edge warning
+  remains. ESLint: no errors; existing rubric warning plus two unused test mock
+  parameter warnings. Whitespace check passed.
+- Preserve the unrelated user changes listed in the earlier handoff. New app
+  release scope is `.github/workflows/ingest.yml`, `ingest/run.ts`, `lib/runner.ts`,
+  Ticketmaster/Freight sources, their tests, runner tests, the Freight JSON fixture,
+  the reviewed SQL plan and this summary. The monitor is a different repository.
+- Next: obtain explicit commit/publication approval, publish intended app fixes,
+  canary Ticketmaster/Freight, approve/rehearse/apply the duplicate cleanup using a
+  fresh recovery point, and resolve upstream Actions access. Configure monitor
+  hosting/secrets/email, publish its private repository, test the repair/email
+  workflow, then connect CRE's real per-source outcomes to its heartbeat endpoint.
+  Hosting location was also requested asynchronously; no answer has arrived yet.
+
+---
+
 # SF Events ingestion — final validation and recovery
 
 **2026-10-23, America/Los_Angeles.** Shane authorized final validation, verified recovery, and pushing the intended changes to `main`.

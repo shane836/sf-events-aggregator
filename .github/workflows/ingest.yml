@@ -68,7 +68,7 @@ jobs:
   ingest:
     needs: [list-sources, migrate]
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: ${{ matrix.source == 'ticketmaster' && 30 || 15 }}
     strategy:
       fail-fast: false
       matrix:

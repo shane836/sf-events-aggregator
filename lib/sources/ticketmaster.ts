@@ -305,6 +305,7 @@ async function fetchPage(
   let res: Response;
   try {
     res = await fetch(url.toString(), {
+      signal: AbortSignal.timeout(20_000),
       headers: {
         "user-agent": USER_AGENT,
         accept: "application/json",
@@ -344,15 +345,16 @@ async function fetchPage(
   try {
     body = await res.json();
   } catch (err) {
+    const timedOut = err instanceof Error && ["TimeoutError", "AbortError"].includes(err.name);
     return {
       events: [],
       error: {
         source: ID,
-        stage: "parse",
-        message: `invalid JSON (${city} ${classification} p${page}): ${
+        stage: timedOut ? "fetch" : "parse",
+        message: `${timedOut ? "request timed out" : "invalid JSON"} (${city} ${classification} p${page}): ${
           err instanceof Error ? err.message : String(err)
         }`,
-        retryable: false,
+        retryable: timedOut,
         occurredAt: new Date(),
       },
     };
