@@ -1,90 +1,78 @@
 import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
-import { describe, expect, it } from "vitest";
-import adapter, {
-  classifyCategory,
-  parseShowDateTime,
-  parseShowsHtml,
-} from "@/lib/sources/freight";
-import type { Provenance } from "@/lib/sources/types";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import adapter, { classifyCategory } from "@/lib/sources/freight";
 
-const provenance: Provenance = {
-  adapterId: "scrape:freight",
-  adapterVersion: "1.0",
-  pipelineVersion: "m1-v2-test",
-  normalizedAt: new Date("2026-06-15T00:00:00Z"),
-};
+const fixture = JSON.parse(readFileSync("fixtures/raw/freight-ticketing.json", "utf8"));
+const now = new Date("2026-10-24T00:00:00Z");
+async function fetchBody(body: unknown) {
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify(body))));
+  return adapter.fetch();
+}
 
-describe("Freight adapter — identity", () => {
-  it("advertises an official Berkeley scrape source", () => {
-    expect(adapter.id).toBe("scrape:freight");
-    expect(adapter.tier).toBe("scrape");
-    expect(adapter.verificationLevel).toBe("official");
+describe("Freight official ticketing calendar", () => {
+  afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
+  it("uses the public ticketing calendar with bounded requests and stable performance identities", async () => {
+    vi.useFakeTimers(); vi.setSystemTime(now);
+    const result = await fetchBody(fixture);
+    expect(result.errors).toEqual([]);
+    expect(result.events).toHaveLength(3);
+    const [url, init] = vi.mocked(fetch).mock.calls[0];
+    expect(url).toBe("https://secure.thefreight.org/api/products/productionseasons");
+    expect(init?.method).toBe("POST");
+    expect(init?.signal).toBeInstanceOf(AbortSignal);
+    expect(JSON.parse(String(init?.body)).productionSeasonIdFilter).toEqual([]);
+    expect(result.events[0]).toMatchObject({
+      identity: { source: "scrape:freight", externalId: "performance:16065" },
+      title: "John Gorka", startTimeUtc: new Date("2026-10-25T03:00:00Z"),
+      venue: { city: "Berkeley" }, pricing: { priceMin: null, priceMax: null, isFree: false },
+    });
+    expect(result.events[1].title).not.toMatch(/<|>/);
   });
-});
-
-describe("parseShowDateTime", () => {
-  it("combines Freight's date string + time into a PT-correct UTC Date", () => {
-    // 7:00 PM PT on 2026-06-18 (PDT = UTC-7) -> 02:00Z next day.
-    const d = parseShowDateTime("Thursday, Jun 18th 2026", "7:00 PM");
-    expect(d?.toISOString()).toBe("2026-06-19T02:00:00.000Z");
+  it("preserves identities across time changes and deduplicates repeated performance cards", async () => {
+    vi.useFakeTimers(); vi.setSystemTime(now);
+    const data = structuredClone(fixture);
+    data.productions.push(data.productions[0]);
+    data.productions[0].performances[0].performanceDate = "2026-11-01T04:00:00Z";
+    const result = await fetchBody(data);
+    expect(result.events).toHaveLength(3);
+    expect(result.events[0].identity.externalId).toBe("performance:16065");
+    expect(result.events[0].startTimeUtc.toISOString()).toBe("2026-11-01T04:00:00.000Z");
   });
-
-  it("defaults to 8pm PT when no time is given", () => {
-    const d = parseShowDateTime("Monday, Jun 15th 2026", null);
-    expect(d?.toISOString()).toBe("2026-06-16T03:00:00.000Z");
+  it("accepts a genuinely empty calendar and excludes past and hidden performances", async () => {
+    vi.useFakeTimers(); vi.setSystemTime(now);
+    expect((await fetchBody({ productions: [] })).errors).toEqual([]);
+    const data = structuredClone(fixture);
+    data.productions[0].performances[0].performanceDate = "2026-10-01T04:00:00Z";
+    data.productions[1].performances[0].isPerformanceVisible = false;
+    expect((await fetchBody(data)).events).toHaveLength(1);
   });
-
-  it("returns null for an unparseable date", () => {
-    expect(parseShowDateTime("coming soon", "7:00 PM")).toBeNull();
+  it.each([{}, { productions: "unexpected" }, { productions: [{}] }])("surfaces response contract changes: %j", async body => {
+    const result = await fetchBody(body);
+    expect(result.errors.length).toBeGreaterThan(0);
+    expect(result.errors[0].stage).toBe("parse");
   });
-});
-
-describe("classifyCategory", () => {
-  it("defaults to music, with workshops/comedy nudged aside", () => {
+  it("reports malformed dates without discarding the valid performances", async () => {
+    vi.useFakeTimers(); vi.setSystemTime(now);
+    const data = structuredClone(fixture);
+    data.productions[0].performances[0].performanceDate = "2026-10-25T20:00:00";
+    const result = await fetchBody(data);
+    expect(result.events).toHaveLength(2);
+    expect(result.errors).toHaveLength(1);
+  });
+  it("keeps category classification", () => {
     expect(classifyCategory("Iris DeMent")).toBe("music");
-    expect(classifyCategory("Fiddle Workshop with Alasdair")).toBe("lectures");
+    expect(classifyCategory("Fiddle Workshop")).toBe("lectures");
     expect(classifyCategory("An Evening of Comedy")).toBe("comedy");
   });
-});
 
-describe("Freight fixture parsing (regression)", () => {
-  it("parses real show cards from the saved /shows/ fixture", () => {
-    const html = readFileSync(
-      resolve(process.cwd(), "fixtures/raw/freight-shows.html"),
-      "utf-8",
-    );
-    const shows = parseShowsHtml(html);
-    expect(shows.length).toBeGreaterThanOrEqual(5);
-
-    const fingerprints = new Set<string>();
-    for (const show of shows) {
-      expect(show.title.length).toBeGreaterThan(0);
-      expect(show.url).toMatch(/thefreight\.org/);
-      expect(show.startTimeUtc.getTime()).toBeGreaterThan(
-        new Date("2026-01-01").getTime(),
-      );
-      // The full pipeline: every parsed show normalizes cleanly to Berkeley.
-      const raw = {
-        identity: { source: "scrape:freight", externalId: show.url, sourceUrl: show.url },
-        title: show.title,
-        description: null,
-        startTimeUtc: show.startTimeUtc,
-        endTimeUtc: null,
-        timezone: "America/Los_Angeles",
-        venue: { name: "Freight & Salvage", city: "Berkeley", timezone: "America/Los_Angeles" },
-        primaryCategory: classifyCategory(show.title),
-        pricing: { priceMin: null, priceMax: null, isFree: false },
-        recurrence: null,
-        verificationLevel: "official" as const,
-        rawPayload: {},
-        fetchedAt: new Date(),
-      };
-      const norm = adapter.normalize(raw, provenance);
-      expect(norm.venue.city).toBe("Berkeley");
-      expect(norm.canonicalFingerprint).toMatch(/^[a-f0-9]{32}$/);
-      fingerprints.add(norm.canonicalFingerprint);
-    }
-    expect(fingerprints.size).toBeGreaterThanOrEqual(5);
+  it("expands multiple performances but excludes listings ticketed at other venues", async () => {
+    vi.useFakeTimers(); vi.setSystemTime(now);
+    const data = structuredClone(fixture);
+    data.productions[0].performances.push({ ...data.productions[0].performances[0], id: 99999, performanceDate: "2026-12-01T04:00:00Z" });
+    data.productions[1].performances[0].actionUrl = "https://berkeleypubliclibrary.libnet.info/event/17282847";
+    const result = await fetchBody(data);
+    expect(result.events).toHaveLength(3);
+    expect(result.events.some(e => e.identity.externalId === "performance:99999")).toBe(true);
+    expect(result.errors).toEqual([]);
   });
 });

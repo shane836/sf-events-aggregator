@@ -97,4 +97,42 @@ describe("ingestion runner outcomes and diagnostics", () => {
     expect(await runAdapter(source)).toMatchObject({ status: "partial", inserted: 1 });
     expect(source.fetch).toHaveBeenCalledTimes(1);
   });
+
+  it("bounds concurrent writes, waits for all records, and retains individual failures", async () => {
+    let active = 0;
+    let peak = 0;
+    persistence.persistEvent.mockImplementation(async () => {
+      active++;
+      peak = Math.max(peak, active);
+      await new Promise(resolve => setTimeout(resolve, 2));
+      active--;
+      if (persistence.persistEvent.mock.calls.length === 9) throw new Error("identity_conflict");
+      return { status: "updated_same_source", id: "event" };
+    });
+    const result = await runAdapter(adapter({ events: Array.from({ length: 9 }, () => raw) }), { concurrency: 4 });
+    expect(peak).toBe(4);
+    expect(active).toBe(0);
+    expect(result).toMatchObject({ status: "partial", fetched: 9, updatedSameSource: 8 });
+    expect(result.errors).toHaveLength(1);
+    expect(persistence.completeRun).toHaveBeenCalledOnce();
+  });
+
+  it("keeps sequential persistence as the default", async () => {
+    let active = 0;
+    let peak = 0;
+    persistence.persistEvent.mockImplementation(async () => {
+      active++;
+      peak = Math.max(peak, active);
+      await Promise.resolve();
+      active--;
+      return { status: "inserted", id: "event" };
+    });
+    await runAdapter(adapter({ events: [raw, raw, raw] }));
+    expect(peak).toBe(1);
+  });
+
+  it.each([0, 5, 1.5, NaN])("rejects unsafe concurrency %s before starting a run", async concurrency => {
+    await expect(runAdapter(adapter(), { concurrency })).rejects.toThrow(/concurrency/);
+    expect(persistence.startRun).not.toHaveBeenCalled();
+  });
 });

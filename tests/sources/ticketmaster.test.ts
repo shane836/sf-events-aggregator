@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import adapter, { mapCategory, parseEvent } from "@/lib/sources/ticketmaster";
 import type { Provenance, RawEvent } from "@/lib/sources/types";
 
@@ -8,6 +8,27 @@ const fetchedAt = new Date("2026-05-25T00:00:00Z");
 // Pin "now" before the earliest fixture event (Old Mervs et al. are after 2026-05-25).
 // Without this, D6 (past-date filter) would drop fixture events as the wall clock advances.
 const NOW_MS = new Date("2026-05-25T00:00:00Z").getTime();
+
+describe("Ticketmaster request deadlines", () => {
+  afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); vi.useRealTimers(); });
+
+  it("bounds every request and reports a stalled response body as a fetch failure", async () => {
+    vi.stubEnv("TICKETMASTER_CONSUMER_KEY", "test-only");
+    vi.useFakeTimers();
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => {
+      return { ok: true, json: async () => { throw new DOMException("Timed out", "TimeoutError"); } };
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const pending = adapter.fetch();
+    await vi.runAllTimersAsync();
+    const result = await pending;
+    expect(fetchMock).toHaveBeenCalled();
+    expect(fetchMock.mock.calls.every(([, init]) => init?.signal instanceof AbortSignal)).toBe(true);
+    expect(result.events).toHaveLength(0);
+    expect(result.errors.length).toBeGreaterThan(0);
+    expect(result.errors.every(e => e.stage === "fetch" && e.retryable)).toBe(true);
+  });
+});
 
 const provenance: Provenance = {
   adapterId: "ticketmaster",

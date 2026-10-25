@@ -1,0 +1,112 @@
+{
+  "productions": [
+    {
+      "productionSeasonId": "16064",
+      "productionTitle": "John Gorka",
+      "listingImageUrl": "https://thefreight.org/app/uploads/2026/07/oct-John-Gorka.jpg",
+      "listingImageAlt": "",
+      "description": "",
+      "keywords": null,
+      "actionUrl": null,
+      "actionUrlText": null,
+      "startDate": "0001-01-01T00:00:00",
+      "displayDate": null,
+      "displayTime": null,
+      "performances": [
+        {
+          "id": 16065,
+          "performanceDate": "2026-10-25T03:00:00+00:00",
+          "iso8601DateString": "2026-10-24T20:00:00.0000000-07:00",
+          "displayDate": "Saturday, October 24, 2026",
+          "displayTime": "8:00PM",
+          "performanceTitle": "John Gorka",
+          "actionUrl": "https://secure.thefreight.org/16064/16065-john-gorka-261024",
+          "actionUrlText": "Purchase",
+          "timeFormat": "h:mmtt",
+          "isPerformanceVisible": true,
+          "isOnSale": true,
+          "hasLimitedSeatingAvailable": false,
+          "performanceStatusMessage": "",
+          "isTitleVisibleOnListView": true,
+          "productTypeId": 3,
+          "productTypeName": "",
+          "performanceSortTitle": "John Gorka"
+        }
+      ],
+      "productionSeasonActionUrl": "https://secure.thefreight.org/16064",
+      "isPerformanceListVisible": true
+    },
+    {
+      "productionSeasonId": "15672",
+      "productionTitle": "One Song All Night: Fleetwood Mac's \"Dreams\"",
+      "listingImageUrl": "https://thefreight.org/app/uploads/2026/07/OSAN-final.jpg",
+      "listingImageAlt": "",
+      "description": "",
+      "keywords": null,
+      "actionUrl": null,
+      "actionUrlText": null,
+      "startDate": "0001-01-01T00:00:00",
+      "displayDate": null,
+      "displayTime": null,
+      "performances": [
+        {
+          "id": 16141,
+          "performanceDate": "2026-10-26T02:00:00+00:00",
+          "iso8601DateString": "2026-10-25T19:00:00.0000000-07:00",
+          "displayDate": "Sunday, October 25, 2026",
+          "displayTime": "7:00PM",
+          "performanceTitle": "One Song All Night: Fleetwood Mac’s “Dreams”<br><font style=\"font-size:80%\">With Evie Ladin’s MoToR/dance, Terrence Brewer, Rip Room, Adrienne Shamszad, MeloDious</font>",
+          "actionUrl": "https://secure.thefreight.org/15672/16141-one-song-all-night-dreams-261025",
+          "actionUrlText": "Purchase",
+          "timeFormat": "h:mmtt",
+          "isPerformanceVisible": true,
+          "isOnSale": true,
+          "hasLimitedSeatingAvailable": false,
+          "performanceStatusMessage": "",
+          "isTitleVisibleOnListView": true,
+          "productTypeId": 3,
+          "productTypeName": "",
+          "performanceSortTitle": "One Song All Night: Fleetwood Mac’s “Dreams”With Evie Ladin’s MoToR/dance, Terrence Brewer, Rip Room, Adrienne Shamszad, MeloDious"
+        }
+      ],
+      "productionSeasonActionUrl": "https://secure.thefreight.org/15672",
+      "isPerformanceListVisible": true
+    },
+    {
+      "productionSeasonId": "16067",
+      "productionTitle": "<style type=\"text/css\"><!--td {border: 1px solid #cccccc;}br {mso-data-placement:same-cell;}-->\n</style>\nMaryna Krut",
+      "listingImageUrl": "https://thefreight.org/app/uploads/2026/07/oct-maraynakrut.jpg",
+      "listingImageAlt": "",
+      "description": "",
+      "keywords": null,
+      "actionUrl": null,
+      "actionUrlText": null,
+      "startDate": "0001-01-01T00:00:00",
+      "displayDate": null,
+      "displayTime": null,
+      "performances": [
+        {
+          "id": 16090,
+          "performanceDate": "2026-10-30T03:00:00+00:00",
+          "iso8601DateString": "2026-10-29T20:00:00.0000000-07:00",
+          "displayDate": "Thursday, October 29, 2026",
+          "displayTime": "8:00PM",
+          "performanceTitle": "Maryna Krut",
+          "actionUrl": "https://secure.thefreight.org/16067/16090-maryna-krut-261029",
+          "actionUrlText": "Purchase",
+          "timeFormat": "h:mmtt",
+          "isPerformanceVisible": true,
+          "isOnSale": true,
+          "hasLimitedSeatingAvailable": false,
+          "performanceStatusMessage": "",
+          "isTitleVisibleOnListView": true,
+          "productTypeId": 3,
+          "productTypeName": "",
+          "performanceSortTitle": "Maryna Krut"
+        }
+      ],
+      "productionSeasonActionUrl": "https://secure.thefreight.org/16067",
+      "isPerformanceListVisible": true
+    }
+  ]
+}
